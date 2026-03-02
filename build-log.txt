@@ -1,0 +1,15 @@
+﻿
+> digihaat-catalogue-to-banner@1.0.0 build
+> tsc -b && vite build
+
+src/hooks/useBannerState.ts(38,34): error TS1005: '>' expected.
+src/hooks/useBannerState.ts(38,39): error TS1005: ';' expected.
+src/hooks/useBannerState.ts(38,49): error TS1109: Expression expected.
+src/hooks/useBannerState.ts(38,65): error TS1161: Unterminated regular expression literal.
+src/hooks/useLogs.ts(23,27): error TS1005: '>' expected.
+src/hooks/useLogs.ts(23,32): error TS1005: ')' expected.
+src/hooks/useLogs.ts(23,35): error TS1136: Property assignment expected.
+src/hooks/useLogs.ts(24,2): error TS1005: ',' expected.
+src/hooks/useLogs.ts(26,4): error TS1161: Unterminated regular expression literal.
+src/hooks/useLogs.ts(27,3): error TS1128: Declaration or statement expected.
+src/hooks/useLogs.ts(28,1): error TS1128: Declaration or statement expected.
