@@ -127,7 +127,6 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               height: '100%',
               objectFit: 'cover',
             }}
-            crossOrigin="anonymous"
           />
         )}
 
@@ -140,11 +139,11 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               position: 'absolute',
               left: BRAND_LOGO.x,
               top: logoY,
-              maxWidth: BRAND_LOGO.maxWidth,
+              width: BRAND_LOGO.width,
               height: BRAND_LOGO.height,
               objectFit: 'contain',
+              objectPosition: 'left',
             }}
-            crossOrigin="anonymous"
           />
         )}
 
@@ -245,14 +244,13 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
             alt={selectedProduct.name}
             style={{
               position: 'absolute',
-              bottom: 0,
+              bottom: PRODUCT_IMAGE.bottomOffset,
               left: PRODUCT_IMAGE.centerX,
               transform: 'translateX(-50%)',
-              maxWidth: PRODUCT_IMAGE.maxWidth,
-              maxHeight: PRODUCT_IMAGE.maxHeight,
+              width: PRODUCT_IMAGE.width,
+              height: PRODUCT_IMAGE.height,
               objectFit: 'contain',
             }}
-            crossOrigin="anonymous"
           />
         )}
       </div>

@@ -13,7 +13,6 @@ interface BannerControlsProps {
   showBadge: boolean
   tncText: string
   selectedBackgroundId: string | null
-  brandLogoOverride: string | null
   /** Current product name override (null = using original catalogue name) */
   productNameOverride: string | null
   /** Original product name from the catalogue (null = no product selected) */
@@ -24,7 +23,6 @@ interface BannerControlsProps {
   onBadgeToggle: () => void
   onTncTextChange: (text: string) => void
   onBackgroundSelect: (bg: BackgroundOption) => void
-  onBrandLogoOverride: (url: string | null) => void
   onProductNameChange: (name: string | null) => void
 }
 
@@ -35,7 +33,6 @@ export default function BannerControls({
   showBadge,
   tncText,
   selectedBackgroundId,
-  brandLogoOverride,
   productNameOverride,
   originalProductName,
   onCtaChange,
@@ -44,11 +41,9 @@ export default function BannerControls({
   onBadgeToggle,
   onTncTextChange,
   onBackgroundSelect,
-  onBrandLogoOverride,
   onProductNameChange,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
-  const [logoInput, setLogoInput] = useState(brandLogoOverride ?? '')
 
   return (
     <div className="space-y-5 p-3">
@@ -62,28 +57,45 @@ export default function BannerControls({
             // Reset to null when the user types back the exact original name
             onProductNameChange(value === originalProductName ? null : value)
           }}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+          className="input-base"
           placeholder="Product name..."
         />
         {productNameOverride !== null && (
           <button
             onClick={() => onProductNameChange(null)}
-            className="text-xs text-red-400 hover:text-red-300 mt-1"
+            className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] mt-1 cursor-pointer transition-interaction"
           >
             Reset to original
           </button>
         )}
       </Section>
 
-      {/* Background Selector */}
+      {/* Background Selector — inline 3-thumbnail strip */}
       <Section title="Background">
+        <div className="flex gap-2">
+          {BACKGROUND_OPTIONS.map((bg) => (
+            <button
+              key={bg.id}
+              onClick={() => onBackgroundSelect(bg)}
+              className={`flex-1 rounded-lg overflow-hidden aspect-[722/312] transition-interaction cursor-pointer ${
+                selectedBackgroundId === bg.id
+                  ? 'ring-2 ring-[var(--accent-base)] ring-offset-1 ring-offset-[var(--surface-1)]'
+                  : 'ring-1 ring-[var(--border-muted)] hover:ring-[var(--border-focus)]'
+              }`}
+            >
+              <img
+                src={bg.url}
+                alt="Background option"
+                className="w-full h-full object-cover"
+              />
+            </button>
+          ))}
+        </div>
         <button
           onClick={() => setGalleryOpen(true)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 transition-colors text-left"
+          className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] mt-1.5 cursor-pointer transition-interaction"
         >
-          {selectedBackgroundId
-            ? `Background ${BACKGROUND_OPTIONS.findIndex((b) => b.id === selectedBackgroundId) + 1}`
-            : 'Choose background...'}
+          Browse all...
         </button>
         <BackgroundGallery
           backgrounds={BACKGROUND_OPTIONS}
@@ -100,7 +112,7 @@ export default function BannerControls({
           type="text"
           value={ctaText}
           onChange={(e) => onCtaChange(e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+          className="input-base"
           placeholder="Button text..."
         />
         <PresetChips
@@ -112,14 +124,14 @@ export default function BannerControls({
 
       {/* Offer Badge */}
       <Section title="Offer Badge">
-        <ToggleRow label={showBadge ? 'Visible' : 'Hidden'} checked={showBadge} onToggle={onBadgeToggle} />
+        <TogglePill checked={showBadge} onToggle={onBadgeToggle} />
         {showBadge && (
           <>
             <input
               type="text"
               value={badgeText}
               onChange={(e) => onBadgeChange(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500 mt-2"
+              className="input-base mt-2"
               placeholder="Badge text..."
             />
             <PresetChips
@@ -133,45 +145,15 @@ export default function BannerControls({
 
       {/* T&C Text */}
       <Section title="*T&C Apply">
-        <ToggleRow label={showTnc ? 'Visible' : 'Hidden'} checked={showTnc} onToggle={onTncToggle} />
+        <TogglePill checked={showTnc} onToggle={onTncToggle} />
         {showTnc && (
           <input
             type="text"
             value={tncText}
             onChange={(e) => onTncTextChange(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500 mt-2"
+            className="input-base mt-2"
             placeholder="T&C text..."
           />
-        )}
-      </Section>
-
-      {/* Brand Logo Override */}
-      <Section title="Brand Logo Override">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={logoInput}
-            onChange={(e) => setLogoInput(e.target.value)}
-            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
-            placeholder="Paste logo URL..."
-          />
-          <button
-            onClick={() => onBrandLogoOverride(logoInput.trim() || null)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm text-white transition-colors flex-shrink-0"
-          >
-            Apply
-          </button>
-        </div>
-        {brandLogoOverride && (
-          <button
-            onClick={() => {
-              onBrandLogoOverride(null)
-              setLogoInput('')
-            }}
-            className="text-xs text-red-400 hover:text-red-300 mt-1"
-          >
-            Reset to default
-          </button>
         )}
       </Section>
     </div>
@@ -183,7 +165,7 @@ export default function BannerControls({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+      <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-tertiary)] mb-2">
         {title}
       </label>
       {children}
@@ -191,21 +173,44 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function ToggleRow({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
+/**
+ * Modern segmented pill toggle — two labeled segments ("On" / "Off")
+ * with a sliding highlight indicator behind the active option.
+ */
+function TogglePill({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
   return (
-    <label className="flex items-center gap-3 cursor-pointer">
-      <div
-        className={`relative w-10 h-5 rounded-full transition-colors ${checked ? 'bg-blue-600' : 'bg-gray-700'
-          }`}
-        onClick={onToggle}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      className="relative flex h-7 w-[88px] rounded-md bg-[var(--surface-2)] border border-[var(--border-muted)] cursor-pointer overflow-hidden transition-interaction"
+    >
+      {/* Sliding highlight */}
+      <span
+        className="absolute top-0.5 bottom-0.5 w-[42px] rounded-[5px] transition-all duration-150 ease-[var(--ease-standard)]"
+        style={{
+          left: checked ? '2px' : 'calc(100% - 44px)',
+          backgroundColor: checked ? 'var(--accent-base)' : 'var(--surface-3)',
+        }}
+      />
+      {/* "On" label — left segment */}
+      <span
+        className={`relative z-10 flex-1 flex items-center justify-center text-[11px] font-semibold transition-colors duration-150 ${
+          checked ? 'text-white' : 'text-[var(--text-tertiary)]'
+        }`}
       >
-        <div
-          className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'
-            }`}
-        />
-      </div>
-      <span className="text-sm text-gray-300">{label}</span>
-    </label>
+        On
+      </span>
+      {/* "Off" label — right segment */}
+      <span
+        className={`relative z-10 flex-1 flex items-center justify-center text-[11px] font-semibold transition-colors duration-150 ${
+          !checked ? 'text-[var(--text-secondary)]' : 'text-[var(--text-tertiary)]'
+        }`}
+      >
+        Off
+      </span>
+    </button>
   )
 }
 
@@ -224,10 +229,11 @@ function PresetChips({
         <button
           key={preset}
           onClick={() => onSelect(preset)}
-          className={`px-2 py-1 rounded text-xs transition-colors ${current === preset
-            ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
-            : 'bg-gray-800 text-gray-400 border border-gray-700 hover:border-gray-500'
-            }`}
+          className={`px-2 py-1 rounded text-xs transition-interaction cursor-pointer ${
+            current === preset
+              ? 'bg-[var(--accent-soft)] text-[var(--text-primary)] border border-[var(--accent-base)]'
+              : 'bg-[var(--surface-2)] text-[var(--text-secondary)] border border-[var(--border-muted)] hover:border-[var(--text-tertiary)]'
+          }`}
         >
           {preset}
         </button>

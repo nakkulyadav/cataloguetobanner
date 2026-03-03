@@ -12,7 +12,7 @@ import BannerControls from '@/components/BannerControls/BannerControls'
 import ExportPanel from '@/components/ExportPanel/ExportPanel'
 import LogsPanel from '@/components/LogsPanel/LogsPanel'
 
-const CATALOGUE_URL = '/catalogue/bquxjob_29e73a5b_19c9ef4329f.json'
+const CATALOGUE_URL = '/catalogue/bquxjob_3d10dc52_19cae848822.json'
 
 function App() {
   const bannerRef = useRef<HTMLDivElement>(null)
@@ -37,7 +37,6 @@ function App() {
     toggleTnc,
     toggleBadge,
     setTncText,
-    setBrandLogoOverride,
     setProductNameOverride,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
@@ -208,24 +207,33 @@ function App() {
   )
 
   return (
-    <div className="h-screen overflow-hidden bg-gray-950 text-gray-100 flex">
-      {/* Left Sidebar: Product Search */}
-      <aside className="w-72 border-r border-gray-800 flex flex-col bg-gray-950">
-        <div className="px-4 py-3 border-b border-gray-800">
-          <h1 className="text-sm font-bold text-gray-100 tracking-wide uppercase">
+    <div className="h-screen overflow-hidden bg-[var(--surface-0)] text-[var(--text-primary)] flex">
+      {/* Left Sidebar: Export button at top, then Product Search */}
+      <aside className="w-64 border-r border-[var(--border-subtle)] flex flex-col bg-[var(--surface-1)]">
+        <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
+          <h1 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-[0.08em]">
             Digihaat Banner
           </h1>
         </div>
 
+        {/* Export button — at top of left panel */}
+        <div className="border-b border-[var(--border-subtle)]">
+          <ExportPanel
+            onExport={handleExport}
+            isExporting={isExporting}
+            disabled={!selectedProduct}
+          />
+        </div>
+
         {isLoading && (
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-gray-500 text-sm">Loading catalogue...</p>
+            <p className="text-[var(--text-tertiary)] text-sm">Loading catalogue...</p>
           </div>
         )}
 
         {error && (
           <div className="p-3">
-            <p className="text-red-400 text-sm">Failed to load catalogue</p>
+            <p className="text-[var(--status-error)] text-sm">Failed to load catalogue</p>
           </div>
         )}
 
@@ -239,37 +247,57 @@ function App() {
       </aside>
 
       {/* Main Content: Banner Preview */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8 bg-gray-900/50">
+      <main className="flex-1 flex flex-col items-center justify-center p-8 bg-[var(--surface-0)]">
         {!selectedProduct ? (
-          <div className="text-gray-500 text-center">
-            <p className="text-lg mb-1">Select a product to get started</p>
-            <p className="text-sm">Choose a product from the sidebar to preview the banner</p>
+          <div className="text-center flex flex-col items-center gap-4">
+            <svg
+              width="64"
+              height="64"
+              viewBox="0 0 64 64"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="text-[var(--text-disabled)] opacity-50"
+            >
+              <rect x="4" y="12" width="56" height="40" rx="6" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="10" y="20" width="20" height="4" rx="2" fill="currentColor" opacity="0.3" />
+              <rect x="10" y="28" width="16" height="3" rx="1.5" fill="currentColor" opacity="0.2" />
+              <rect x="10" y="36" width="12" height="8" rx="2" fill="currentColor" opacity="0.15" />
+              <circle cx="44" cy="32" r="10" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+            </svg>
+            <div>
+              <p className="text-base font-medium text-[var(--text-secondary)] mb-1">
+                No product selected
+              </p>
+              <p className="text-sm text-[var(--text-tertiary)]">
+                Pick a product from the sidebar to generate a banner
+              </p>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4">
-            <div className="rounded-lg overflow-hidden shadow-2xl border border-gray-700">
+            <div className="rounded-3xl overflow-hidden shadow-deep">
               <BannerPreview ref={bannerRef} state={bannerState} />
             </div>
 
-            {/* Remove Background button — sits between preview and dimension label */}
+            {/* Ghost-style "Remove Background" button */}
             <button
               type="button"
               onClick={handleRemoveBackground}
               disabled={removeBgDisabled}
-              className="bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-lg px-4 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="border border-[var(--border-muted)] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] rounded-lg px-4 py-2 text-sm transition-interaction disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {isRemovingBg ? 'Removing Background...' : 'Remove Background'}
             </button>
 
-            <p className="text-xs text-gray-500">722 × 312px</p>
+            <p className="text-[10px] text-[var(--text-tertiary)] self-end">722 × 312px</p>
           </div>
         )}
       </main>
 
-      {/* Right Sidebar: Controls + Export + Logs */}
-      <aside className="w-80 border-l border-gray-800 flex flex-col bg-gray-950">
-        <div className="px-4 py-3 border-b border-gray-800">
-          <h2 className="text-sm font-bold text-gray-100 tracking-wide uppercase">
+      {/* Right Sidebar: Controls + Logs — width 1.25× of w-72 (288→360px) */}
+      <aside className="w-[360px] border-l border-[var(--border-subtle)] flex flex-col bg-[var(--surface-1)]">
+        <div className="px-4 py-3 border-b border-[var(--border-subtle)]">
+          <h2 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-[0.08em]">
             Banner Settings
           </h2>
         </div>
@@ -282,7 +310,6 @@ function App() {
             showBadge={showBadge}
             tncText={tncText}
             selectedBackgroundId={selectedBackground?.id ?? null}
-            brandLogoOverride={brandLogoOverride}
             productNameOverride={productNameOverride}
             originalProductName={selectedProduct?.name ?? null}
             onCtaChange={setCtaText}
@@ -291,21 +318,12 @@ function App() {
             onBadgeToggle={toggleBadge}
             onTncTextChange={setTncText}
             onBackgroundSelect={selectBackground}
-            onBrandLogoOverride={setBrandLogoOverride}
             onProductNameChange={setProductNameOverride}
           />
-
-          <div className="border-t border-gray-800">
-            <ExportPanel
-              onExport={handleExport}
-              isExporting={isExporting}
-              disabled={!selectedProduct}
-            />
-          </div>
         </div>
 
         {/* Logs at the bottom */}
-        <div className="border-t border-gray-800 h-48">
+        <div className="border-t border-[var(--border-subtle)] h-48">
           <LogsPanel logs={logs} onClear={clearLogs} />
         </div>
       </aside>

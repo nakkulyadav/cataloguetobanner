@@ -21,9 +21,9 @@ const LEFT_MARGIN = 40;
 // --- Brand Logo (top-left) ---
 export const BRAND_LOGO = {
   x: LEFT_MARGIN,
-  y: 11,
-  maxWidth: 120,
-  /** Fixed height — scales small logos up to 40px, maintains aspect ratio */
+  y: 22,
+  width: 320,
+  /** Fixed height — objectFit:contain scales logos up/down to fit this box */
   height: 40,
 };
 
@@ -32,6 +32,7 @@ export const BRAND_LOGO = {
 // Gap between logo bottom and heading top = 8px.
 export const PRODUCT_NAME = {
   x: LEFT_MARGIN,
+  y: 60,
   maxWidth: 320,
   fontFamily: '"Inter", sans-serif',
   fontWeight: 800,
@@ -40,9 +41,9 @@ export const PRODUCT_NAME = {
   maxLines: 2,
   maxFontSize: 32,
   minFontSize: 18,
-  fontSizeStep: 2,
+  fontSizeStep: 1,
   /** Bottom edge of the logo+heading group */
-  groupBottomY: 165,
+  groupBottomY: 155,
   /** Gap between logo bottom and heading top */
   logoHeadingGap: 8,
   /** When no logo, heading starts here */
@@ -52,7 +53,7 @@ export const PRODUCT_NAME = {
 // --- Subheading Reserved Area (empty for now) ---
 export const SUBHEADING = {
   x: LEFT_MARGIN,
-  y: 180,
+  y: 170,
   height: 45,
   maxWidth: 320,
 };
@@ -60,12 +61,12 @@ export const SUBHEADING = {
 // --- CTA Button ---
 export const CTA_BUTTON = {
   x: LEFT_MARGIN,
-  y: 233,
+  y: 223,
   paddingX: 12,
   paddingY: 8,
   fontSize: 20,
   fontWeight: 700,
-  lineHeight: 1,
+  lineHeight: 1.1,
   color: '#FFFFFF',
   borderRadius: 8,
   /** Default CTA background when no background is selected */
@@ -78,19 +79,20 @@ export const TNC_TEXT = {
   /** Gap measured from the bottom edge of the CTA button box */
   gapBelowCta: 3,
   fontSize: 10,
-  fontWeight: 400,
+  fontWeight: 500,
   color: '#000000',
   maxWidth: 320,
 };
 
 // --- Offer Badge (top-right, flush with canvas edges) ---
 export const OFFER_BADGE = {
-  paddingX: 16,
-  paddingY: 8,
-  fontSize: 24,
+  paddingX: 12,
+  paddingY: 4,
+  fontSize: 22,
   fontWeight: 500,
   color: '#FFFFFF',
   backgroundColor: '#85929E',
+  bottom: 10,
   /** Asymmetric corners: TL=0, TR=matches canvas, BR=0, BL=8 */
   borderRadius: `0px ${BANNER_RADIUS}px 0px 8px`,
 };
@@ -99,6 +101,7 @@ export const OFFER_BADGE = {
 export const PRODUCT_IMAGE = {
   /** Horizontal centre of the right half: (361 + 722) / 2 */
   centerX: 541.5,
-  maxWidth: 300,
-  maxHeight: 280,
+  width: 270,
+  height: 250,
+  bottomOffset: 5,
 };

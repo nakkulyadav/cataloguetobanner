@@ -1,6 +1,6 @@
 # Feature Implementation Plan
 
-**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | 37/37 tests passing | Build OK | Remove BG + Editable Product Name complete`
+**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | 37/37 tests passing | Build OK | Frontend Modernization complete`
 
 ## TLDR
 Build a client-side React app that lets Digihaat employees search products from a JSON catalogue, customize banner elements (background, CTA, offer badge), preview a 712×322px banner in real-time, and export it as PNG/JPG/WEBP. Dark theme modern dashboard UI. No backend — catalogue is a static JSON file.
@@ -572,3 +572,154 @@ Font: **Inter** via Google Fonts CDN (400, 500, 700, 800).
 - `removeBackgroundService.ts` — unchanged
 - `catalogueParser.ts` — catalogue data stays as-is
 - `searchService.ts` — search uses original catalogue names
+
+---
+
+## Frontend Modernization – Phase-wise Implementation
+
+**Goal:** Transform the existing UI into a Linear/Vercel-inspired ultra-clean tech dashboard with Apple-level depth and polish, keeping the professional internal-tool aesthetic. This is a structured visual + UX redesign — **business logic, hooks, services, types, and tests are untouched.**
+
+**Design Direction:** Near-black layered surfaces · Indigo accent system · 8pt spacing grid · 150ms micro-interactions · Strong typographic hierarchy · Controlled whitespace as the primary separator · No heavy gradients, no neumorphism, no bounce animations.
+
+**Constraint:** All 37 tests must pass after every phase. Run `npm run test:run` as a gate.
+
+---
+
+### Design System Tokens (reference for all phases)
+
+| Token | Value | Use |
+|---|---|---|
+| `--surface-0` | `#0a0a0b` | Page background |
+| `--surface-1` | `#111113` | Sidebar / panel backgrounds |
+| `--surface-2` | `#1a1a1f` | Input / card backgrounds |
+| `--surface-3` | `#222229` | Hover states |
+| `--border-subtle` | `rgba(255,255,255,0.06)` | Primary dividers |
+| `--border-muted` | `rgba(255,255,255,0.10)` | Input borders |
+| `--border-focus` | `#6366f1` | Focus rings |
+| `--text-primary` | `#f4f4f5` | Main readable text |
+| `--text-secondary` | `#a1a1aa` | Labels, metadata |
+| `--text-tertiary` | `#71717a` | Placeholders, timestamps |
+| `--accent-base` | `#6366f1` | Primary action color (replaces blue-600) |
+| `--accent-hover` | `#4f46e5` | Hover state for accent |
+| `--accent-soft` | `rgba(99,102,241,0.12)` | Selected item backgrounds |
+| `--duration-fast` | `150ms` | Standard interaction speed |
+| `--ease-standard` | `cubic-bezier(0.16,1,0.3,1)` | Snappy ease-out |
+
+---
+
+### Phase 1 — Design Token Foundation ✅ DONE
+
+**Files:** `src/index.css`, `tailwind.config.ts`
+
+- [x] 🟩 **FM-1:** Add all CSS custom properties (surface, border, text, accent, shadow, duration, easing) to `:root` in `index.css`
+- [x] 🟩 **FM-2:** Add base styles to `index.css` — body background, font-smoothing, Inter font-family
+- [x] 🟩 **FM-3:** Extend `tailwind.config.ts` theme with color tokens, so `bg-surface-1`, `text-text-secondary`, etc. become usable Tailwind classes
+- [x] 🟩 **FM-4:** Add `@layer utilities` to `index.css` — `.transition-interaction`, `.focus-ring`, `.input-base` utility classes
+- [x] 🟩 **FM-5:** Add thin scrollbar styles, `::selection` highlight, and global `:focus-visible` ring to `index.css`
+
+---
+
+### Phase 2 — App Shell & Layout ✅ DONE
+
+**File:** `App.tsx` (layout/JSX only — no logic changes)
+
+- [x] 🟩 **FM-6:** Replace raw `bg-gray-950` / `bg-gray-900/50` with CSS variable references
+- [x] 🟩 **FM-7:** Narrow sidebars: left `w-64` (256px), right `w-72` (288px)
+- [x] 🟩 **FM-8:** Replace `border-gray-800` dividers with `border-[var(--border-subtle)]`
+- [x] 🟩 **FM-9:** Upgrade sidebar headers — `text-[11px] font-semibold text-[--text-tertiary] uppercase tracking-[0.08em]`
+- [x] 🟩 **FM-10:** Redesign empty state — add SVG banner-outline icon, new heading + sub-text copy, centered layout
+- [x] 🟩 **FM-11:** Redesign BannerPreview wrapper — deep lift shadow (`0 24px 48px rgba(0,0,0,0.65)`), match 24px border-radius to banner
+- [x] 🟩 **FM-12:** Relocate dimension label — right-aligned `text-[10px] text-[--text-tertiary]` below preview wrapper
+- [x] 🟩 **FM-13:** Upgrade "Remove Background" button — ghost style with `border-muted`, `text-secondary`, `hover:bg-[--surface-2]`
+
+---
+
+### Phase 3 — Component Restyling
+
+Each component is refactored independently. No prop-type or interface changes.
+
+#### 3A — ProductSearch ✅ DONE
+**File:** `src/components/ProductSearch/ProductSearch.tsx`
+
+- [x] 🟩 **FM-14:** Add search icon SVG (magnifier, 14×14) inside the search input as a left prefix
+- [x] 🟩 **FM-15:** Apply `.input-base` styles to search input
+- [x] 🟩 **FM-16:** Restyle `ProductItem` button — selected state uses left accent border + `bg-[--accent-soft]`, hover uses `bg-[--surface-2]`, all via `transition-interaction`
+- [x] 🟩 **FM-17:** Replace veg dot with 6×6 inline SVG indicator; replace `!` missing-image text with a small SVG warning triangle
+
+#### 3B — BannerControls ✅ DONE
+**File:** `src/components/BannerControls/BannerControls.tsx`
+
+- [x] 🟩 **FM-18:** Apply `.input-base` to all text inputs
+- [x] 🟩 **FM-19:** Replace background "Choose background..." trigger button with an **inline 3-thumbnail strip** — small `aspect-[722/312]` image buttons in `flex gap-2`, selected = `ring-2 ring-[--accent-base]`
+- [x] 🟩 **FM-20:** Restyle `PresetChips` — base `bg-[--surface-2]` / active `bg-[--accent-soft]` / hover `border-[--border-muted]`
+- [x] 🟩 **FM-21:** Fix `ToggleRow` — replace `<div onClick>` with `<button role="switch" aria-checked>`, restyle track and thumb with CSS variable colors
+- [x] 🟩 **FM-22:** Change "Reset to original" / "Reset to default" from `text-red-400` to `text-[--text-tertiary]` — reset is neutral, not destructive
+- [x] 🟩 **FM-23:** Change brand logo "Apply" button from `blue-600` to `bg-[--accent-base]`
+- [x] 🟩 **FM-24:** Update `Section` component label — `text-[11px] font-semibold uppercase tracking-[0.06em] text-[--text-tertiary]`
+
+#### 3C — ExportPanel ✅ DONE
+**File:** `src/components/ExportPanel/ExportPanel.tsx`
+
+- [x] 🟩 **FM-25:** Change Download button from `green-600` → `bg-[--accent-base] hover:bg-[--accent-hover]` — green is out of system
+- [x] 🟩 **FM-26:** Disabled state: `bg-[--surface-2] text-[--text-disabled] border border-[--border-subtle]`
+- [x] 🟩 **FM-27:** Add `active:scale-[0.98]` micro-interaction on the enabled button
+
+#### 3D — LogsPanel ✅ DONE
+**File:** `src/components/LogsPanel/LogsPanel.tsx`
+
+- [x] 🟩 **FM-28:** Replace character icons (`i`, `!`, `✕`) with proper inline SVG icons (circle-info, triangle-warning, x-circle)
+- [x] 🟩 **FM-29:** Apply `--status-*` and `--status-*-bg` colors (from token file) to log entry backgrounds and icon colors
+- [x] 🟩 **FM-30:** Update header label typography — match section label style from BannerControls
+- [x] 🟩 **FM-31:** Update message text to `text-[--text-secondary]`, timestamp to `text-[--text-tertiary]`
+
+#### 3E — BackgroundGallery ✅ DONE
+**File:** `src/components/BackgroundGallery/BackgroundGallery.tsx`
+
+- [x] 🟩 **FM-32:** Add modal entry animation — `@keyframes dialogIn` (scale 0.97→1 + opacity 0→1 at 200ms) in `index.css`, apply `.dialog-enter` class to dialog div
+- [x] 🟩 **FM-33:** Add `backdrop-blur-sm` to the backdrop overlay
+- [x] 🟩 **FM-34:** Restyle dialog — `bg-[--surface-1]`, `border-[--border-muted]`, `shadow-xl`
+- [x] 🟩 **FM-35:** Restyle close button — `w-7 h-7 rounded-md hover:bg-[--surface-2]` with SVG × icon
+- [x] 🟩 **FM-36:** Restyle thumbnail selection — `ring-2 ring-[--accent-base] ring-offset-2 ring-offset-[--surface-1]` (selected) vs `ring-1 ring-[--border-muted]` (unselected)
+
+---
+
+### Phase 4 — Audit & Consistency Pass ✅ DONE
+
+- [x] 🟩 **FM-37:** Global sweep — replace all remaining raw `gray-*` Tailwind classes with CSS variable equivalents
+- [x] 🟩 **FM-38:** Verify all interactive elements have `cursor-pointer` and `transition-interaction`
+- [x] 🟩 **FM-39:** Verify `ExportModal.tsx` (if styled separately) follows the same modal conventions as BackgroundGallery
+
+---
+
+### Phase 5 — Verification ✅ DONE
+
+- [x] 🟩 **FM-40:** `npm run test:run` — all 37 tests pass
+- [x] 🟩 **FM-41:** `npm run build` — TypeScript compiles clean, no errors
+- [ ] ⬜ **FM-42:** Manual visual check — banner preview, empty state, all 3 sidebars, modal, logs panel
+- [ ] ⬜ **FM-43:** Tab through entire UI — every interactive element has a visible focus ring
+- [ ] ⬜ **FM-44:** Export a banner — verify the visual output is unchanged (styling changes must not touch BannerPreview internals)
+
+---
+
+### Files Modified in This Phase
+
+| File | Change |
+|---|---|
+| `src/index.css` | CSS variables, base styles, utilities, animations, scrollbars |
+| `tailwind.config.ts` | Theme token extension |
+| `src/App.tsx` | Layout shell, empty state, wrapper styles, button styles |
+| `src/components/ProductSearch/ProductSearch.tsx` | Search icon, item styles |
+| `src/components/BannerControls/BannerControls.tsx` | All controls restyled, toggle semantics, bg thumbnail strip |
+| `src/components/ExportPanel/ExportPanel.tsx` | Button color, micro-interaction |
+| `src/components/LogsPanel/LogsPanel.tsx` | SVG icons, color tokens |
+| `src/components/BackgroundGallery/BackgroundGallery.tsx` | Modal animation, styles |
+
+### Files NOT Modified
+
+- All hooks (`useBannerState`, `useCatalogue`, `useLogs`)
+- All services (`exportService`, `catalogueParser`, `searchService`, `removeBackgroundService`)
+- All types (`types/index.ts`)
+- All constants (`bannerTemplate.ts`, `backgrounds.ts`)
+- `src/components/BannerPreview/BannerPreview.tsx` — internal layout untouched
+- `main.tsx`, `index.html`, `vite.config.ts`, `vitest.config.ts`
+- All test files
