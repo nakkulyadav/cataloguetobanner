@@ -31,6 +31,9 @@ interface BannerControlsProps {
   /** Original prices from catalogue (undefined = no price data) */
   originalPrice: ProductPrice | undefined
   onPriceOverrideChange: (price: ProductPrice | null) => void
+  /** Custom subheading text shown when price is toggled off */
+  subheadingText: string
+  onSubheadingTextChange: (text: string) => void
 }
 
 export default function BannerControls({
@@ -54,6 +57,8 @@ export default function BannerControls({
   priceOverride,
   originalPrice,
   onPriceOverrideChange,
+  subheadingText,
+  onSubheadingTextChange,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
 
@@ -169,9 +174,20 @@ export default function BannerControls({
         )}
       </Section>
 
-      {/* Price Display */}
+      {/* Price Display / Subheading Text */}
       <Section title="Price">
         <TogglePill checked={showPrice} onToggle={onPriceToggle} />
+        {/* When price is off, show a subheading text input instead */}
+        {!showPrice && (
+          <input
+            type="text"
+            value={subheadingText}
+            onChange={(e) => onSubheadingTextChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+            className="input-base mt-2"
+            placeholder="Enter subheading..."
+          />
+        )}
         {showPrice && (
           <div className="mt-2 space-y-2">
             <div>

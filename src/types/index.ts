@@ -59,6 +59,8 @@ export interface BannerState {
   showTnc: boolean;
   showBadge: boolean;
   showPrice: boolean;
+  /** Custom text rendered in the subheading area when price is toggled off */
+  subheadingText: string;
   tncText: string;
   brandLogoOverride: string | null;
   /** Custom product name for the banner heading. null = use original catalogue name. */

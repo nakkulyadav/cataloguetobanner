@@ -969,3 +969,79 @@ Each component is refactored independently. No prop-type or interface changes.
 ---
 
 **After completion:** All 37+ existing tests pass, price display toggle works, exported banners include prices when enabled, no regressions to existing features.
+
+---
+
+## Subheading Text When Price Off — Implementation Plan
+
+**Overall Progress:** `0%`
+
+**Context:** When the user toggles price off, the subheading area (y:170, 45px tall, maxWidth:320) is left empty. This feature lets the user enter custom single-line text in that space. The text renders at Inter 600, 28px, black. The input starts empty — the area stays blank until the user types something.
+
+### Critical Decisions
+- **Positioning:** Reuse existing `SUBHEADING` constants (x:40, y:170, maxWidth:320) — no new layout math needed
+- **Single-line enforcement:** Block Enter key in the input + `white-space: nowrap` / `overflow: hidden` on the banner render, constrained to `maxWidth: 320px`
+- **State lifecycle:** Clear `subheadingText` when product changes (same pattern as `productNameOverride`). Preserve it across price toggles so users don't lose text if they toggle back and forth
+
+### Tasks
+
+- [ ] 🟥 **Step S1: Add type + constant definitions**
+  - [ ] 🟥 Add `subheadingText: string` to `BannerState` in `src/types/index.ts`
+  - [ ] 🟥 Add `SUBHEADING_TEXT` styling constants to `src/constants/bannerTemplate.ts` — `fontSize: 28`, `fontWeight: 600`, `color: '#000000'`, `fontFamily: '"Inter", sans-serif'`
+
+- [ ] 🟥 **Step S2: Add state management**
+  - [ ] 🟥 Add `subheadingText` state (default `''`) + `setSubheadingText` setter in `src/hooks/useBannerState.tsx`
+  - [ ] 🟥 Reset `subheadingText` to `''` inside `selectProduct` callback (alongside existing `setProductNameOverride(null)`)
+  - [ ] 🟥 Expose in `BannerContextType` interface and context value object
+
+- [ ] 🟥 **Step S3: Wire through App.tsx**
+  - [ ] 🟥 Destructure `subheadingText` and `setSubheadingText` from `useBannerState()`
+  - [ ] 🟥 Include `subheadingText` in the `bannerState` useMemo object
+  - [ ] 🟥 Pass `subheadingText` and `onSubheadingTextChange={setSubheadingText}` to `<BannerControls>`
+
+- [ ] 🟥 **Step S4: Add input UI in BannerControls**
+  - [ ] 🟥 Add `subheadingText: string` and `onSubheadingTextChange: (text: string) => void` to `BannerControlsProps`
+  - [ ] 🟥 Inside the Price `<Section>`, when `!showPrice`: render a text input (placeholder `"Enter subheading..."`, `input-base` class)
+  - [ ] 🟥 Block Enter key via `onKeyDown` to enforce single-line
+
+- [ ] 🟥 **Step S5: Render subheading text in BannerPreview**
+  - [ ] 🟥 Destructure `subheadingText` from `state`
+  - [ ] 🟥 Import `SUBHEADING` constant (already exists in `bannerTemplate.ts`)
+  - [ ] 🟥 When `!showPrice && subheadingText`: render a `<div>` at `SUBHEADING.x` / `SUBHEADING.y` with `SUBHEADING_TEXT` styling, `whiteSpace: 'nowrap'`, `overflow: 'hidden'`, `maxWidth: SUBHEADING.maxWidth`
+
+- [ ] 🟥 **Step S6: Build & verify**
+  - [ ] 🟥 `npm run build` — type-check passes
+  - [ ] 🟥 `npm run test:run` — all existing tests pass
+  - [ ] ⬜ Manual: toggle price off → type text → renders single-line at correct position/style → toggle price on → text preserved → switch product → text cleared
+
+### Edge Cases
+
+| Scenario | Behavior |
+|---|---|
+| Price toggled on | Subheading input hidden, price displays normally |
+| Price toggled off, no text entered | Subheading area stays empty |
+| Price toggled off, text entered | Text renders at Inter 600, 28px, black in subheading area |
+| Text exceeds 320px width | Clipped via `overflow: hidden` + `white-space: nowrap` |
+| User presses Enter in input | Blocked — no newlines allowed |
+| User toggles price on then off again | Previously entered text is preserved |
+| User switches product | Subheading text reset to `''` |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `subheadingText: string` to `BannerState` |
+| `src/constants/bannerTemplate.ts` | Add `SUBHEADING_TEXT` styling constants |
+| `src/hooks/useBannerState.tsx` | Add state + setter + reset on product switch |
+| `src/components/BannerControls/BannerControls.tsx` | Add subheading text input when price is off |
+| `src/components/BannerPreview/BannerPreview.tsx` | Render subheading text when price off + text non-empty |
+| `src/App.tsx` | Wire `subheadingText` and `setSubheadingText` through props + state |
+
+### Files NOT Modified
+
+- `src/services/exportService.ts` — subheading renders as part of BannerPreview DOM
+- `src/services/catalogueParser.ts` — catalogue data unchanged
+- `src/services/searchService.ts` — search unchanged
+- `src/services/removeBackgroundService.ts` — unchanged
+- `src/constants/backgrounds.ts` — unchanged
+- All test files — no new tests needed (build + existing tests cover regressions)

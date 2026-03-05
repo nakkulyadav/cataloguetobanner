@@ -34,6 +34,7 @@ function App() {
     brandLogoOverride,
     productNameOverride,
     showPrice,
+    subheadingText,
     selectProduct,
     selectBackground,
     setCtaText,
@@ -45,6 +46,7 @@ function App() {
     setProductNameOverride,
     priceOverride,
     setPriceOverride,
+    setSubheadingText,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
 
@@ -163,6 +165,7 @@ function App() {
       showTnc,
       showBadge,
       showPrice,
+      subheadingText,
       tncText,
       brandLogoOverride: effectiveBrandLogo,
       productNameOverride,
@@ -176,6 +179,7 @@ function App() {
     showTnc,
     showBadge,
     showPrice,
+    subheadingText,
     tncText,
     brandLogoOverride,
     productNameOverride,
@@ -335,6 +339,8 @@ function App() {
             priceOverride={priceOverride}
             originalPrice={selectedProduct?.price}
             onPriceOverrideChange={setPriceOverride}
+            subheadingText={subheadingText}
+            onSubheadingTextChange={setSubheadingText}
           />
         </div>
 

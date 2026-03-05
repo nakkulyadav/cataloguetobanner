@@ -12,6 +12,8 @@ import {
   OFFER_BADGE,
   PRODUCT_IMAGE,
   PRICE_DISPLAY,
+  SUBHEADING,
+  SUBHEADING_TEXT,
 } from '@/constants/bannerTemplate'
 
 interface BannerPreviewProps {
@@ -35,6 +37,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       showTnc,
       showBadge,
       showPrice,
+      subheadingText,
       tncText,
       brandLogoOverride,
       productNameOverride,
@@ -211,6 +214,27 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
             >
               {displayPrice.sellingPrice}
             </span>
+          </div>
+        )}
+
+        {/* Subheading Text (shown in subheading area when price is off) */}
+        {!showPrice && subheadingText && (
+          <div
+            style={{
+              position: 'absolute',
+              left: SUBHEADING.x,
+              top: SUBHEADING.y,
+              maxWidth: SUBHEADING.maxWidth,
+              fontSize: SUBHEADING_TEXT.fontSize,
+              fontWeight: SUBHEADING_TEXT.fontWeight,
+              color: SUBHEADING_TEXT.color,
+              fontFamily: SUBHEADING_TEXT.fontFamily,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              lineHeight: 1,
+            }}
+          >
+            {subheadingText}
           </div>
         )}
 

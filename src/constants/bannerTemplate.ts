@@ -21,7 +21,7 @@ const LEFT_MARGIN = 40;
 // --- Brand Logo (top-left) ---
 export const BRAND_LOGO = {
   x: LEFT_MARGIN,
-  y: 22,
+  y: 25,
   width: 320,
   /** Fixed height — objectFit:contain scales logos up/down to fit this box */
   height: 40,
@@ -32,7 +32,7 @@ export const BRAND_LOGO = {
 // Gap between logo bottom and heading top = 8px.
 export const PRODUCT_NAME = {
   x: LEFT_MARGIN,
-  y: 60,
+  y: 65,
   maxWidth: 320,
   fontFamily: '"Inter", sans-serif',
   fontWeight: 800,
@@ -40,29 +40,37 @@ export const PRODUCT_NAME = {
   lineHeight: 1.2,
   maxLines: 2,
   maxFontSize: 32,
-  minFontSize: 18,
+  minFontSize: 22,
   fontSizeStep: 1,
   /** Bottom edge of the logo+heading group */
   groupBottomY: 155,
   /** Gap between logo bottom and heading top */
-  logoHeadingGap: 8,
+  logoHeadingGap: 5,
   /** When no logo, heading starts here */
-  noLogoTopY: 22,
+  noLogoTopY: 25,
 };
 
 // --- Subheading Reserved Area ---
 export const SUBHEADING = {
   x: LEFT_MARGIN,
-  y: 170,
-  height: 45,
+  y: 165,
+  height: 50,
   maxWidth: 320,
 };
 
-// --- Price Display (within the subheading area, bottom-aligned at y=205) ---
+// --- Subheading Custom Text (shown in subheading area when price is toggled off) ---
+export const SUBHEADING_TEXT = {
+  fontSize: 28,
+  fontWeight: 700,
+  color: '#000000',
+  fontFamily: '"Inter", sans-serif',
+};
+
+// --- Price Display (within the subheading area, bottom-aligned at y=215) ---
 export const PRICE_DISPLAY = {
   x: LEFT_MARGIN,
   /** Bottom edge of the subheading area — prices are bottom-aligned here */
-  bottomY: 205,
+  bottomY: 215,
   /** Horizontal gap between MRP and selling price */
   gap: 8,
   mrp: {
@@ -83,7 +91,7 @@ export const PRICE_DISPLAY = {
 // --- CTA Button ---
 export const CTA_BUTTON = {
   x: LEFT_MARGIN,
-  y: 223,
+  y: 225,
   paddingX: 12,
   paddingY: 8,
   fontSize: 20,
@@ -110,11 +118,11 @@ export const TNC_TEXT = {
 export const OFFER_BADGE = {
   paddingX: 12,
   paddingY: 4,
-  fontSize: 22,
+  fontSize: 20,
   fontWeight: 500,
   color: '#FFFFFF',
   backgroundColor: '#85929E',
-  bottom: 10,
+  bottom: 5,
   /** Asymmetric corners: TL=0, TR=matches canvas, BR=0, BL=8 */
   borderRadius: `0px ${BANNER_RADIUS}px 0px 8px`,
 };
@@ -123,7 +131,7 @@ export const OFFER_BADGE = {
 export const PRODUCT_IMAGE = {
   /** Horizontal centre of the right half: (361 + 722) / 2 */
   centerX: 541.5,
-  width: 270,
-  height: 250,
-  bottomOffset: 5,
+  width: 300,
+  height: 275,
+  bottomOffset: 2,
 };

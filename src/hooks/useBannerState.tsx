@@ -15,6 +15,7 @@ interface BannerContextType extends BannerState {
   setProductNameOverride: (name: string | null) => void;
   setPriceOverride: (price: ProductPrice | null) => void;
   togglePrice: () => void;
+  setSubheadingText: (text: string) => void;
 }
 
 const BannerContext = createContext<BannerContextType | undefined>(undefined);
@@ -31,6 +32,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [productNameOverride, setProductNameOverride] = useState<string | null>(null);
   const [showPrice, setShowPrice] = useState(true);
   const [priceOverride, setPriceOverride] = useState<ProductPrice | null>(null);
+  const [subheadingText, setSubheadingText] = useState('');
 
   const toggleTnc = useCallback(() => setShowTnc(prev => !prev), []);
   const toggleBadge = useCallback(() => setShowBadge(prev => !prev), []);
@@ -41,6 +43,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSelectedProduct(product);
     setProductNameOverride(null);
     setPriceOverride(null);
+    setSubheadingText('');
   }, []);
 
   const value: BannerContextType = {
@@ -52,6 +55,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showTnc,
     showBadge,
     showPrice,
+    subheadingText,
     tncText,
     brandLogoOverride,
     productNameOverride,
@@ -70,6 +74,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setProductNameOverride,
     setPriceOverride,
     togglePrice,
+    setSubheadingText,
   };
 
   return (
