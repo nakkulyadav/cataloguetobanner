@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import type { BannerState, ParsedProduct, BackgroundOption } from '../types';
+import type { BannerState, ParsedProduct, BackgroundOption, ProductPrice } from '../types';
 
 interface BannerContextType extends BannerState {
   selectProduct: (product: ParsedProduct | null) => void;
@@ -13,6 +13,8 @@ interface BannerContextType extends BannerState {
   setTncText: (text: string) => void;
   setBrandLogoOverride: (url: string | null) => void;
   setProductNameOverride: (name: string | null) => void;
+  setPriceOverride: (price: ProductPrice | null) => void;
+  togglePrice: () => void;
 }
 
 const BannerContext = createContext<BannerContextType | undefined>(undefined);
@@ -27,14 +29,18 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [tncText, setTncText] = useState('*T&C Apply');
   const [brandLogoOverride, setBrandLogoOverride] = useState<string | null>(null);
   const [productNameOverride, setProductNameOverride] = useState<string | null>(null);
+  const [showPrice, setShowPrice] = useState(true);
+  const [priceOverride, setPriceOverride] = useState<ProductPrice | null>(null);
 
   const toggleTnc = useCallback(() => setShowTnc(prev => !prev), []);
   const toggleBadge = useCallback(() => setShowBadge(prev => !prev), []);
+  const togglePrice = useCallback(() => setShowPrice(prev => !prev), []);
 
   // Wrap selectProduct to reset the name override when switching products
   const selectProduct = useCallback((product: ParsedProduct | null) => {
     setSelectedProduct(product);
     setProductNameOverride(null);
+    setPriceOverride(null);
   }, []);
 
   const value: BannerContextType = {
@@ -45,9 +51,11 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     badgeText,
     showTnc,
     showBadge,
+    showPrice,
     tncText,
     brandLogoOverride,
     productNameOverride,
+    priceOverride,
     // Setters & toggles
     selectProduct,
     selectBackground: setSelectedBackground,
@@ -60,6 +68,8 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setTncText,
     setBrandLogoOverride,
     setProductNameOverride,
+    setPriceOverride,
+    togglePrice,
   };
 
   return (

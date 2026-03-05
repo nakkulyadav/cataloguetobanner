@@ -4,10 +4,10 @@ import { parseCatalogue, groupProducts, getProductsWithMissingImages } from '../
 import { useLogs } from './useLogs';
 
 /**
- * Fetches the catalogue JSON, parses entries into products,
+ * Fetches one or more catalogue JSON files, merges entries, parses into products,
  * groups them by parent-child relationships, and detects missing images.
  */
-export const useCatalogue = (catalogueUrl: string) => {
+export const useCatalogue = (catalogueUrls: string | string[]) => {
   const [products, setProducts] = useState<ParsedProduct[]>([]);
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [missingImageProducts, setMissingImageProducts] = useState<ParsedProduct[]>([]);
@@ -23,14 +23,21 @@ export const useCatalogue = (catalogueUrl: string) => {
       setError(null);
 
       try {
-        // Fetch raw JSON catalogue
-        const response = await fetch(catalogueUrl);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        const rawEntries: RawCatalogueEntry[] = await response.json();
+        // Normalize to array
+        const urls = Array.isArray(catalogueUrls) ? catalogueUrls : [catalogueUrls];
+
+        // Fetch all catalogues in parallel
+        const responses = await Promise.all(
+          urls.map(url => fetch(url).then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+            return res.json();
+          }))
+        );
 
         if (!mounted) return;
+
+        // Merge all raw entries
+        const rawEntries: RawCatalogueEntry[] = responses.flat();
 
         // Parse → group → detect missing images
         const parsed = parseCatalogue(rawEntries);
@@ -41,7 +48,13 @@ export const useCatalogue = (catalogueUrl: string) => {
         setGroups(grouped);
         setMissingImageProducts(missing);
 
-        addLog('info', `Loaded ${parsed.length} products in ${grouped.length} groups.`);
+        addLog('info', `Loaded ${parsed.length} products in ${grouped.length} groups from ${urls.length} catalogue(s).`);
+
+        // Log aggregate count of products missing price data
+        const missingPriceCount = parsed.filter(p => !p.price).length;
+        if (missingPriceCount > 0) {
+          addLog('info', `Price data missing for ${missingPriceCount} product${missingPriceCount > 1 ? 's' : ''}`);
+        }
       } catch (err: unknown) {
         if (!mounted) return;
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -54,12 +67,12 @@ export const useCatalogue = (catalogueUrl: string) => {
       }
     };
 
-    if (catalogueUrl) {
+    if (catalogueUrls) {
       loadData();
     }
 
     return () => { mounted = false; };
-  }, [catalogueUrl, addLog]);
+  }, [catalogueUrls, addLog]);
 
   return { products, groups, isLoading, error, missingImageProducts };
 };

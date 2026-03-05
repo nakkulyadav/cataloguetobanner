@@ -12,14 +12,17 @@ import BannerControls from '@/components/BannerControls/BannerControls'
 import ExportPanel from '@/components/ExportPanel/ExportPanel'
 import LogsPanel from '@/components/LogsPanel/LogsPanel'
 
-const CATALOGUE_URL = '/catalogue/bquxjob_3d10dc52_19cae848822.json'
+const CATALOGUE_URLS = [
+  '/catalogue/bquxjob_3d10dc52_19cae848822.json',
+  '/catalogue/bquxjob_29e73a5b_19c9ef4329f.json',
+]
 
 function App() {
   const bannerRef = useRef<HTMLDivElement>(null)
   const [isExporting, setIsExporting] = useState(false)
 
   // --- Data hooks (Context-based) ---
-  const { groups, isLoading, error, missingImageProducts } = useCatalogue(CATALOGUE_URL)
+  const { groups, isLoading, error, missingImageProducts } = useCatalogue(CATALOGUE_URLS)
   const {
     selectedProduct,
     selectedBackground,
@@ -30,14 +33,18 @@ function App() {
     tncText,
     brandLogoOverride,
     productNameOverride,
+    showPrice,
     selectProduct,
     selectBackground,
     setCtaText,
     setBadgeText,
     toggleTnc,
     toggleBadge,
+    togglePrice,
     setTncText,
     setProductNameOverride,
+    priceOverride,
+    setPriceOverride,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
 
@@ -155,9 +162,11 @@ function App() {
       badgeText,
       showTnc,
       showBadge,
+      showPrice,
       tncText,
       brandLogoOverride: effectiveBrandLogo,
       productNameOverride,
+      priceOverride,
     }
   }, [
     selectedProduct,
@@ -166,9 +175,11 @@ function App() {
     badgeText,
     showTnc,
     showBadge,
+    showPrice,
     tncText,
     brandLogoOverride,
     productNameOverride,
+    priceOverride,
     bgRemovedProductUrl,
     bgRemovedLogoUrl,
   ])
@@ -319,6 +330,11 @@ function App() {
             onTncTextChange={setTncText}
             onBackgroundSelect={selectBackground}
             onProductNameChange={setProductNameOverride}
+            showPrice={showPrice}
+            onPriceToggle={togglePrice}
+            priceOverride={priceOverride}
+            originalPrice={selectedProduct?.price}
+            onPriceOverrideChange={setPriceOverride}
           />
         </div>
 

@@ -1,4 +1,15 @@
-import { ParsedProduct, ProductGroup, RawCatalogueEntry } from '@/types'
+import type { ParsedProduct, ProductPrice, ProductGroup, RawCatalogueEntry } from '@/types'
+
+/**
+ * Formats a raw price value into a display string with ₹ prefix and comma separators.
+ * Strips decimals (e.g. "499.0" → "₹499") and adds Indian-style commas (e.g. 1299 → "₹1,299").
+ */
+export function formatPrice(value: string | number): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  if (!Number.isFinite(num)) return ''
+  // Math.trunc strips decimals; toLocaleString adds commas
+  return `₹${Math.trunc(num).toLocaleString('en-IN')}`
+}
 
 export function parseCatalogue(entries: RawCatalogueEntry[]): ParsedProduct[] {
   const productsMap = new Map<string, ParsedProduct>()
@@ -64,6 +75,18 @@ export function parseCatalogue(entries: RawCatalogueEntry[]): ParsedProduct[] {
         }
       }
 
+      // Extract and format price data (MRP + selling price)
+      let price: ProductPrice | undefined
+      const rawMrp = itemInfo.price?.maximum_value
+      const rawSelling = itemInfo.price?.value
+      if (rawMrp != null && rawSelling != null) {
+        const formattedMrp = formatPrice(rawMrp)
+        const formattedSelling = formatPrice(rawSelling)
+        if (formattedMrp && formattedSelling) {
+          price = { mrp: formattedMrp, sellingPrice: formattedSelling }
+        }
+      }
+
       productsMap.set(itemId, {
         id: itemId,
         name: itemInfo.descriptor?.name || '',
@@ -73,6 +96,7 @@ export function parseCatalogue(entries: RawCatalogueEntry[]): ParsedProduct[] {
         isVeg,
         isRelated,
         parentId,
+        price,
         provider: {
           brandName,
           brandLogo: providerLogo,

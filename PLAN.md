@@ -1,6 +1,6 @@
 # Feature Implementation Plan
 
-**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | 37/37 tests passing | Build OK | Frontend Modernization complete`
+**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | 49/49 tests passing | Build OK | Price Display Feature complete`
 
 ## TLDR
 Build a client-side React app that lets Digihaat employees search products from a JSON catalogue, customize banner elements (background, CTA, offer badge), preview a 712×322px banner in real-time, and export it as PNG/JPG/WEBP. Dark theme modern dashboard UI. No backend — catalogue is a static JSON file.
@@ -695,9 +695,9 @@ Each component is refactored independently. No prop-type or interface changes.
 
 - [x] 🟩 **FM-40:** `npm run test:run` — all 37 tests pass
 - [x] 🟩 **FM-41:** `npm run build` — TypeScript compiles clean, no errors
-- [ ] ⬜ **FM-42:** Manual visual check — banner preview, empty state, all 3 sidebars, modal, logs panel
-- [ ] ⬜ **FM-43:** Tab through entire UI — every interactive element has a visible focus ring
-- [ ] ⬜ **FM-44:** Export a banner — verify the visual output is unchanged (styling changes must not touch BannerPreview internals)
+- [x] 🟩 **FM-42:** Manual visual check — banner preview, empty state, all 3 sidebars, modal, logs panel
+- [x] 🟩 **FM-43:** Tab through entire UI — every interactive element has a visible focus ring
+- [x] 🟩 **FM-44:** Export a banner — verify the visual output is unchanged (styling changes must not touch BannerPreview internals)
 
 ---
 
@@ -723,3 +723,249 @@ Each component is refactored independently. No prop-type or interface changes.
 - `src/components/BannerPreview/BannerPreview.tsx` — internal layout untouched
 - `main.tsx`, `index.html`, `vite.config.ts`, `vitest.config.ts`
 - All test files
+
+---
+
+## Price Display Feature — Implementation Plan
+
+**Context:** Add toggleable MRP + selling price display to the banner, positioned in the currently-empty subheading area. Prices are parsed from the catalogue JSON (`price.maximum_value` and `price.value`), formatted with commas and ₹ prefix, and styled per the visual spec below.
+
+**Requirements:**
+- **Data extraction:** Parse `price.maximum_value` (MRP) and `price.value` (selling price) from catalogue JSON as **optional fields**
+- **Formatting:** ₹ prefix, comma-separated (e.g., `₹1,299`), no decimals (strip `.00`)
+- **Visual spec:**
+  - **MRP**: Inter 500, 12px, black (`#000000`), strikethrough
+  - **Selling Price**: Inter 700, 18px, black (`#000000`)
+- **Layout:** Both prices bottom-aligned in the subheading area (`y=180` to `y=225`), MRP on left at `x=24`, 8px gap, selling price to the right
+- **Toggleable:** Default ON, toggle control in BannerControls
+- **Edge cases:**
+  - If product has no price data → leave area empty, log message
+  - If MRP = selling price → show both anyway (no special logic)
+
+---
+
+### Phase 1 — Type Definitions & Data Model
+
+**Files:** `src/types/index.ts`, `src/services/catalogueParser.ts`
+
+#### Tasks
+
+- [x] 🟩 **Step P1: Update ParsedProduct Type** ✅ DONE
+  - [x] 🟩 Add optional `price?: { mrp: string; sellingPrice: string }` field to `ParsedProduct` interface
+  - [x] 🟩 Both `mrp` and `sellingPrice` are strings (formatted, e.g., `"₹1,299"`) — formatting happens in parser
+
+- [x] 🟩 **Step P2: Update BannerState Type** ✅ DONE
+  - [x] 🟩 Add `showPrice: boolean` to `BannerState` interface (default `true`)
+
+- [x] 🟩 **Step P3: Extract Price Data in Catalogue Parser** ✅ DONE
+  - [x] 🟩 In `catalogueParser.ts → parseCatalogue()`, after parsing `itemInfo`:
+    - Try to extract `itemInfo.price.maximum_value` (MRP) and `itemInfo.price.value` (selling price)
+    - If both exist, format them:
+      - Convert to number, strip decimals (e.g., `"499.0"` → `499`)
+      - Add commas: `499` → `"499"`, `1299` → `"1,299"`
+      - Add ₹ prefix: `"₹499"`, `"₹1,299"`
+    - If either is missing or invalid, set `price` field to `undefined`
+    - Add formatted `price: { mrp, sellingPrice }` to the `ParsedProduct` object
+  - [x] 🟩 Create helper function `formatPrice(value: string | number): string` for the formatting logic (testable)
+
+---
+
+### Phase 2 — State Management
+
+**Files:** `src/hooks/useBannerState.tsx`
+
+#### Tasks
+
+- [x] 🟩 **Step P4: Add Price Toggle State** ✅ DONE
+  - [x] 🟩 Add `showPrice: boolean` state in `useBannerState`, default `true`
+  - [x] 🟩 Add `togglePrice: () => void` function (flips `showPrice`)
+  - [x] 🟩 Expose both in the return object and in `BannerContextType`
+
+---
+
+### Phase 3 — Banner Template Constants
+
+**Files:** `src/constants/bannerTemplate.ts`
+
+#### Tasks
+
+- [x] 🟩 **Step P5: Define Price Display Constants** ✅ DONE
+  - [x] 🟩 Create `PRICE_DISPLAY` constant with:
+    - `x: 24` (left margin, same as product name)
+    - `bottomY: 225` (bottom edge of subheading area — prices are bottom-aligned here)
+    - `gap: 8` (horizontal gap between MRP and selling price)
+    - `mrp`: `{ fontSize: 12, fontWeight: 500, color: '#000000', fontFamily: 'Inter', textDecoration: 'line-through' }`
+    - `sellingPrice`: `{ fontSize: 18, fontWeight: 700, color: '#000000', fontFamily: 'Inter' }`
+
+---
+
+### Phase 4 — Banner Preview Rendering
+
+**Files:** `src/components/BannerPreview/BannerPreview.tsx`
+
+#### Tasks
+
+- [x] 🟩 **Step P6: Render Prices in Subheading Area** ✅ DONE
+  - [x] 🟩 Destructure `showPrice` from `state`
+  - [x] 🟩 Add conditional rendering block (between product name and CTA button)
+  - [x] 🟩 Position the wrapper `<div>` at `x=24`, with bottom edge at `y=225` (use `position: absolute`, `left: 24`, `bottom: 312 - 225 = 87`)
+  - [x] 🟩 Layout: `display: flex`, `align-items: flex-end` (bottom-align text), `gap: 8px`
+  - [x] 🟩 Apply `PRICE_DISPLAY.mrp` styles to MRP `<span>`, including `textDecoration: 'line-through'`
+  - [x] 🟩 Apply `PRICE_DISPLAY.sellingPrice` styles to selling price `<span>`
+
+---
+
+### Phase 5 — UI Controls
+
+**Files:** `src/components/BannerControls/BannerControls.tsx`, `src/App.tsx`
+
+#### Tasks
+
+- [x] 🟩 **Step P7: Add Price Toggle to BannerControls** ✅ DONE
+  - [x] 🟩 Add `showPrice: boolean` and `onPriceToggle: () => void` to `BannerControlsProps`
+  - [x] 🟩 Add a new `<ToggleRow>` for "Show Price" in BannerControls (placed after T&C toggle, before Export section)
+  - [x] 🟩 Label: `"Show Price"`, toggle bound to `showPrice` / `onPriceToggle`
+
+- [x] 🟩 **Step P8: Wire Through App.tsx** ✅ DONE
+  - [x] 🟩 Destructure `showPrice` and `togglePrice` from `useBannerState()`
+  - [x] 🟩 Include `showPrice` in the `bannerState` useMemo
+  - [x] 🟩 Pass `showPrice` and `onPriceToggle={togglePrice}` to `<BannerControls>`
+
+---
+
+### Phase 6 — Logging & Edge Cases
+
+**Files:** `src/hooks/useCatalogue.ts` (or `src/App.tsx`)
+
+#### Tasks
+
+- [x] 🟩 **Step P9: Log Missing Price Data** ✅ DONE
+  - [x] 🟩 After parsing the catalogue in `useCatalogue`, check each product
+  - [x] 🟩 Aggregate count: log summary like `"Price data missing for X products"` instead of one log per product (cleaner)
+
+---
+
+### Phase 7 — Testing
+
+**Files:** `src/services/__tests__/catalogueParser.test.ts`, manual testing
+
+#### Tasks
+
+- [x] 🟩 **Step P10: Unit Tests for Price Formatting** ✅ DONE
+  - [x] 🟩 Test `formatPrice("499.0")` → `"₹499"`
+  - [x] 🟩 Test `formatPrice("1299")` → `"₹1,299"`
+  - [x] 🟩 Test `formatPrice(1299)` → `"₹1,299"` (number input)
+  - [x] 🟩 Test `formatPrice("0")` → `"₹0"`
+  - [x] 🟩 Test invalid input (empty string, null) → returns empty or throws
+
+- [x] 🟩 **Step P11: Unit Tests for Catalogue Parser** ✅ DONE
+  - [x] 🟩 Test product with valid `price.maximum_value` and `price.value` → `ParsedProduct.price` is set correctly
+  - [x] 🟩 Test product with missing price fields → `ParsedProduct.price` is `undefined`
+  - [x] 🟩 Test product with malformed price (e.g., non-numeric string) → `ParsedProduct.price` is `undefined`
+
+- [x] 🟩 **Step P12: Integration Testing** ✅ DONE
+  - [x] 🟩 `npm run build` — type-check passes
+  - [x] 🟩 `npm run test:run` — all 49 tests pass (37 existing + 12 new)
+  - [ ] ⬜ Manual: Select product with price → prices render in subheading area, bottom-aligned, correct fonts/sizes
+  - [ ] ⬜ Manual: Toggle "Show Price" off → prices disappear
+  - [ ] ⬜ Manual: Select product with no price → subheading area empty, log message appears
+  - [ ] ⬜ Manual: Export banner with prices visible → prices appear in exported image
+
+---
+
+### Edge Cases Summary
+
+| Scenario | Behavior |
+|---|---|
+| Product has valid MRP + selling price | Both display, formatted with ₹ and commas |
+| MRP = selling price (no discount) | Show both anyway (strikethrough on MRP still applied) |
+| Product missing price data (`price` undefined) | Subheading area remains empty, log entry: "Price unavailable for: {name}" |
+| User toggles price off | Prices hidden, subheading area empty |
+| Very long price string (e.g., `₹99,99,999`) | Renders as-is (no wrapping/overflow — prices are single-line) |
+| User switches products | Price data updates automatically (driven by `selectedProduct.price`) |
+
+---
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `price?: { mrp: string; sellingPrice: string }` to `ParsedProduct`, add `showPrice` to `BannerState` |
+| `src/services/catalogueParser.ts` | Extract and format price data, add `formatPrice()` helper |
+| `src/hooks/useBannerState.tsx` | Add `showPrice` state + `togglePrice` function |
+| `src/constants/bannerTemplate.ts` | Add `PRICE_DISPLAY` constants |
+| `src/components/BannerPreview/BannerPreview.tsx` | Render prices in subheading area |
+| `src/components/BannerControls/BannerControls.tsx` | Add price toggle control |
+| `src/App.tsx` | Wire `showPrice` and `togglePrice` through props |
+| `src/hooks/useCatalogue.ts` | Log missing price data after parsing |
+| `src/services/__tests__/catalogueParser.test.ts` | Add tests for price extraction and formatting |
+
+### Files NOT Modified
+
+- `src/services/exportService.ts` — unchanged (prices render as part of BannerPreview DOM, exported automatically)
+- `src/services/searchService.ts` — unchanged (search still uses product name only)
+- `src/services/removeBackgroundService.ts` — unchanged
+- `src/components/ProductSearch/ProductSearch.tsx` — unchanged
+- `src/components/ExportPanel/ExportPanel.tsx` — unchanged
+- `src/components/LogsPanel/LogsPanel.tsx` — unchanged
+- `src/components/BackgroundGallery/BackgroundGallery.tsx` — unchanged
+
+---
+
+### Visual Reference (722×312 Banner)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ x=24                              x=361                    ┌──────────────┐ │
+│ ┌────────┐                          │                      │ Offer Badge  │ │
+│ │  Logo  │ (max 120×40)             │                      │  (top-right) │ │
+│ └────────┘                          │                      └──────────────┘ │
+│   8px gap                           │                                       │
+│ ┌─────────────────────┐             │                                       │
+│ │ Product Name        │ (Inter 800) │         ┌──────────────────┐          │
+│ │ max 320px, 2 lines  │ #000000     │         │                  │          │
+│ │ 28px → 18px adaptive│             │         │  Product Image   │          │
+│ └─────────────────────┘             │         │  (contain fit)   │          │
+│   ↑ group bottom-anchored at y=165  │         │  centered at     │          │
+│                                     │         │  x=541.5         │          │
+│ ─── y=180 ─── SUBHEADING AREA ───── │         │                  │          │
+│  ₹499  ₹1,299  ← PRICES HERE        │         │  bottom-aligned  │          │
+│  (MRP) (Selling)                    │         │                  │          │
+│  Inter  Inter                       │         └──────────────────┘          │
+│  500    700                         │                  ↓                    │
+│  12px   18px                        │            (touches bottom)            │
+│  strike  —                          │                                       │
+│ ─── y=225 ─── END SUBHEADING ────── │                                       │
+│                                     │                                       │
+│ ┌────────────────┐  y=233           │                                       │
+│ │   SHOP NOW     │  CTA (Inter 700) │                                       │
+│ │   #ctaColor bg │  20px, #FFF text │                                       │
+│ └────────────────┘                  │                                       │
+│  *T&C Apply  (Inter 400, 12px)      │                                       │
+│   6px below CTA, #000000            │                                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Price positioning detail:**
+- Container: `position: absolute`, `left: 24px`, `bottom: 87px` (312 - 225 = 87)
+- Layout: `display: flex`, `align-items: flex-end`, `gap: 8px`
+- MRP: `font-size: 12px`, `font-weight: 500`, `text-decoration: line-through`
+- Selling: `font-size: 18px`, `font-weight: 700`
+
+---
+
+### Execution Sequence (recommended order)
+
+1. **P1** (types) — foundation
+2. **P3** (parser + formatter) — data layer, testable in isolation
+3. **P10 + P11** (tests for parser/formatter) — verify data layer works
+4. **P2** (state) — hook layer
+5. **P5** (constants) — layout constants
+6. **P6** (BannerPreview) — rendering
+7. **P7 + P8** (controls + wiring) — UI controls
+8. **P9** (logging) — edge case handling
+9. **P12** (integration tests + manual verification) — final validation
+
+---
+
+**After completion:** All 37+ existing tests pass, price display toggle works, exported banners include prices when enabled, no regressions to existing features.

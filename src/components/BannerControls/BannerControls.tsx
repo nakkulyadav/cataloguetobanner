@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { BackgroundOption } from '@/types'
+import type { BackgroundOption, ProductPrice } from '@/types'
 import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 import BackgroundGallery from '@/components/BackgroundGallery/BackgroundGallery'
 
@@ -24,6 +24,13 @@ interface BannerControlsProps {
   onTncTextChange: (text: string) => void
   onBackgroundSelect: (bg: BackgroundOption) => void
   onProductNameChange: (name: string | null) => void
+  showPrice: boolean
+  onPriceToggle: () => void
+  /** Current price override (null = using original catalogue prices) */
+  priceOverride: ProductPrice | null
+  /** Original prices from catalogue (undefined = no price data) */
+  originalPrice: ProductPrice | undefined
+  onPriceOverrideChange: (price: ProductPrice | null) => void
 }
 
 export default function BannerControls({
@@ -42,6 +49,11 @@ export default function BannerControls({
   onTncTextChange,
   onBackgroundSelect,
   onProductNameChange,
+  showPrice,
+  onPriceToggle,
+  priceOverride,
+  originalPrice,
+  onPriceOverrideChange,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
 
@@ -154,6 +166,60 @@ export default function BannerControls({
             className="input-base mt-2"
             placeholder="T&C text..."
           />
+        )}
+      </Section>
+
+      {/* Price Display */}
+      <Section title="Price">
+        <TogglePill checked={showPrice} onToggle={onPriceToggle} />
+        {showPrice && (
+          <div className="mt-2 space-y-2">
+            <div>
+              <label className="block text-[10px] text-[var(--text-tertiary)] mb-1">MRP</label>
+              <input
+                type="text"
+                value={priceOverride?.mrp ?? originalPrice?.mrp ?? ''}
+                onChange={(e) => {
+                  const currentSelling = priceOverride?.sellingPrice ?? originalPrice?.sellingPrice ?? ''
+                  const newMrp = e.target.value
+                  // Reset to null if both match originals
+                  if (newMrp === originalPrice?.mrp && currentSelling === originalPrice?.sellingPrice) {
+                    onPriceOverrideChange(null)
+                  } else {
+                    onPriceOverrideChange({ mrp: newMrp, sellingPrice: currentSelling })
+                  }
+                }}
+                className="input-base"
+                placeholder="e.g. ₹1,299"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-[var(--text-tertiary)] mb-1">Selling Price</label>
+              <input
+                type="text"
+                value={priceOverride?.sellingPrice ?? originalPrice?.sellingPrice ?? ''}
+                onChange={(e) => {
+                  const currentMrp = priceOverride?.mrp ?? originalPrice?.mrp ?? ''
+                  const newSelling = e.target.value
+                  if (currentMrp === originalPrice?.mrp && newSelling === originalPrice?.sellingPrice) {
+                    onPriceOverrideChange(null)
+                  } else {
+                    onPriceOverrideChange({ mrp: currentMrp, sellingPrice: newSelling })
+                  }
+                }}
+                className="input-base"
+                placeholder="e.g. ₹499"
+              />
+            </div>
+            {priceOverride !== null && (
+              <button
+                onClick={() => onPriceOverrideChange(null)}
+                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer transition-interaction"
+              >
+                Reset to original
+              </button>
+            )}
+          </div>
         )}
       </Section>
     </div>

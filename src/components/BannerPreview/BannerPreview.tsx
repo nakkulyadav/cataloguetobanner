@@ -11,6 +11,7 @@ import {
   TNC_TEXT,
   OFFER_BADGE,
   PRODUCT_IMAGE,
+  PRICE_DISPLAY,
 } from '@/constants/bannerTemplate'
 
 interface BannerPreviewProps {
@@ -33,15 +34,20 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       badgeText,
       showTnc,
       showBadge,
+      showPrice,
       tncText,
       brandLogoOverride,
       productNameOverride,
+      priceOverride,
     } = state
 
     const brandLogo = brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
 
     // Use the override if set, otherwise fall back to the catalogue name
     const displayName = productNameOverride ?? selectedProduct?.name
+
+    // Use price override if set, otherwise fall back to catalogue prices
+    const displayPrice = priceOverride ?? selectedProduct?.price
 
     // --- Adaptive font sizing for product name ---
     const headingMeasureRef = useRef<HTMLDivElement>(null)
@@ -167,6 +173,44 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
             }}
           >
             {displayName}
+          </div>
+        )}
+
+        {/* Price Display (subheading area, bottom-aligned at bottomY) */}
+        {showPrice && displayPrice && (
+          <div
+            style={{
+              position: 'absolute',
+              left: PRICE_DISPLAY.x,
+              bottom: BANNER_HEIGHT - PRICE_DISPLAY.bottomY,
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: PRICE_DISPLAY.gap,
+            }}
+          >
+            <span
+              style={{
+                fontSize: PRICE_DISPLAY.mrp.fontSize,
+                fontWeight: PRICE_DISPLAY.mrp.fontWeight,
+                color: PRICE_DISPLAY.mrp.color,
+                fontFamily: PRICE_DISPLAY.mrp.fontFamily,
+                textDecoration: PRICE_DISPLAY.mrp.textDecoration,
+                lineHeight: 1,
+              }}
+            >
+              {displayPrice.mrp}
+            </span>
+            <span
+              style={{
+                fontSize: PRICE_DISPLAY.sellingPrice.fontSize,
+                fontWeight: PRICE_DISPLAY.sellingPrice.fontWeight,
+                color: PRICE_DISPLAY.sellingPrice.color,
+                fontFamily: PRICE_DISPLAY.sellingPrice.fontFamily,
+                lineHeight: 1,
+              }}
+            >
+              {displayPrice.sellingPrice}
+            </span>
           </div>
         )}
 

@@ -50,12 +50,34 @@ export const PRODUCT_NAME = {
   noLogoTopY: 22,
 };
 
-// --- Subheading Reserved Area (empty for now) ---
+// --- Subheading Reserved Area ---
 export const SUBHEADING = {
   x: LEFT_MARGIN,
   y: 170,
   height: 45,
   maxWidth: 320,
+};
+
+// --- Price Display (within the subheading area, bottom-aligned at y=205) ---
+export const PRICE_DISPLAY = {
+  x: LEFT_MARGIN,
+  /** Bottom edge of the subheading area — prices are bottom-aligned here */
+  bottomY: 205,
+  /** Horizontal gap between MRP and selling price */
+  gap: 8,
+  mrp: {
+    fontSize: 24,
+    fontWeight: 500,
+    color: '#000000',
+    fontFamily: '"Inter", sans-serif',
+    textDecoration: 'line-through' as const,
+  },
+  sellingPrice: {
+    fontSize: 36,
+    fontWeight: 700,
+    color: '#000000',
+    fontFamily: '"Inter", sans-serif',
+  },
 };
 
 // --- CTA Button ---

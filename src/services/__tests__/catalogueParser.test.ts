@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseCatalogue, groupProducts, getProductsWithMissingImages } from '../catalogueParser'
+import { parseCatalogue, groupProducts, getProductsWithMissingImages, formatPrice } from '../catalogueParser'
 import type { RawCatalogueEntry } from '@/types'
 
 function makeEntry(
@@ -245,5 +245,94 @@ describe('getProductsWithMissingImages', () => {
     const missing = getProductsWithMissingImages(products)
 
     expect(missing).toHaveLength(0)
+  })
+})
+
+describe('formatPrice', () => {
+  it('formats a string value with decimals', () => {
+    expect(formatPrice('499.0')).toBe('₹499')
+  })
+
+  it('formats a string value with commas', () => {
+    expect(formatPrice('1299')).toBe('₹1,299')
+  })
+
+  it('formats a number input', () => {
+    expect(formatPrice(1299)).toBe('₹1,299')
+  })
+
+  it('formats zero', () => {
+    expect(formatPrice('0')).toBe('₹0')
+  })
+
+  it('returns empty string for non-numeric input', () => {
+    expect(formatPrice('abc')).toBe('')
+  })
+
+  it('returns empty string for empty string', () => {
+    expect(formatPrice('')).toBe('')
+  })
+
+  it('strips decimal places from large values', () => {
+    expect(formatPrice('9999.99')).toBe('₹9,999')
+  })
+})
+
+describe('parseCatalogue — price extraction', () => {
+  it('extracts formatted price when both MRP and selling price exist', () => {
+    const entries = [makeEntry(baseItem, baseProvider)]
+    const products = parseCatalogue(entries)
+
+    expect(products[0]!.price).toBeDefined()
+    expect(products[0]!.price!.mrp).toBe('₹200')
+    expect(products[0]!.price!.sellingPrice).toBe('₹100')
+  })
+
+  it('sets price to undefined when price fields are missing', () => {
+    const itemNoPrice = {
+      ...baseItem,
+      id: 'no-price',
+      price: undefined,
+    }
+    const entries = [makeEntry(itemNoPrice, baseProvider)]
+    const products = parseCatalogue(entries)
+
+    expect(products[0]!.price).toBeUndefined()
+  })
+
+  it('sets price to undefined when maximum_value is missing', () => {
+    const itemPartialPrice = {
+      ...baseItem,
+      id: 'partial-price',
+      price: { currency: 'INR', value: 100 },
+    }
+    const entries = [makeEntry(itemPartialPrice, baseProvider)]
+    const products = parseCatalogue(entries)
+
+    expect(products[0]!.price).toBeUndefined()
+  })
+
+  it('sets price to undefined when value is missing', () => {
+    const itemPartialPrice = {
+      ...baseItem,
+      id: 'partial-price-2',
+      price: { currency: 'INR', maximum_value: '200' },
+    }
+    const entries = [makeEntry(itemPartialPrice, baseProvider)]
+    const products = parseCatalogue(entries)
+
+    expect(products[0]!.price).toBeUndefined()
+  })
+
+  it('handles non-numeric price values gracefully', () => {
+    const itemBadPrice = {
+      ...baseItem,
+      id: 'bad-price',
+      price: { currency: 'INR', value: 'not-a-number', maximum_value: 'also-bad' },
+    }
+    const entries = [makeEntry(itemBadPrice, baseProvider)]
+    const products = parseCatalogue(entries)
+
+    expect(products[0]!.price).toBeUndefined()
   })
 })

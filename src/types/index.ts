@@ -6,6 +6,12 @@ export interface ProviderDetails {
   companyName: string;
 }
 
+/** Formatted price pair for banner display (pre-formatted with ₹ prefix + commas) */
+export interface ProductPrice {
+  mrp: string;
+  sellingPrice: string;
+}
+
 export interface ParsedProduct {
   id: string;
   name: string;
@@ -16,6 +22,8 @@ export interface ParsedProduct {
   isRelated: boolean;
   parentId: string | null;
   provider: ProviderDetails;
+  /** Formatted prices from catalogue. Undefined when price data is missing/invalid. */
+  price?: ProductPrice;
 }
 
 export interface ProductGroup {
@@ -50,10 +58,13 @@ export interface BannerState {
   badgeText: string;
   showTnc: boolean;
   showBadge: boolean;
+  showPrice: boolean;
   tncText: string;
   brandLogoOverride: string | null;
   /** Custom product name for the banner heading. null = use original catalogue name. */
   productNameOverride: string | null;
+  /** Custom price override for the banner. null = use original catalogue prices. */
+  priceOverride: ProductPrice | null;
 }
 
 // --- Logging ---
