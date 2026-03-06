@@ -1,4 +1,4 @@
-import { forwardRef, useRef, useState, useEffect } from 'react'
+import { forwardRef, useRef, useState, useEffect, useMemo } from 'react'
 import type { BannerState } from '@/types'
 import {
   BANNER_WIDTH,
@@ -14,17 +14,50 @@ import {
   PRICE_DISPLAY,
   SUBHEADING,
   SUBHEADING_TEXT,
+  LEFT_SECTION_GAPS,
+  PRICE_HEIGHT,
+  SUBHEADING_TEXT_HEIGHT,
+  CTA_HEIGHT,
+  TNC_HEIGHT,
 } from '@/constants/bannerTemplate'
 
 interface BannerPreviewProps {
   state: BannerState
 }
 
+// --- Element identifiers for the dynamic layout system ---
+type ElementId = 'logo' | 'heading' | 'subheading' | 'cta' | 'tnc'
+
+/**
+ * Look up the gap between two adjacent visible elements.
+ * Falls back to the gap keyed by the earlier element when elements
+ * between them are hidden (e.g. logo→cta uses logo→heading gap).
+ */
+function getGapBetween(a: ElementId, b: ElementId): number {
+  const key = `${a}-${b}`
+  const direct = LEFT_SECTION_GAPS[key]
+  if (direct !== undefined) return direct
+
+  // For non-adjacent pairs, use the gap defined for the earlier element's
+  // natural next neighbour. The ordered list ensures correct lookup.
+  const ordered: ElementId[] = ['logo', 'heading', 'subheading', 'cta', 'tnc']
+  const idxA = ordered.indexOf(a)
+  for (let i = idxA; i < ordered.length - 1; i++) {
+    const gapKey = `${ordered[i]}-${ordered[i + 1]}`
+    const gap = LEFT_SECTION_GAPS[gapKey]
+    if (gap !== undefined) return gap
+  }
+
+  return 15 // safe default
+}
+
 /**
  * The 722×312px banner preview component.
  *
  * Layout: 50/50 split at x=361.
- *   Left  → logo, product name, CTA, T&C
+ *   Left  → logo, product name, subheading/price, CTA, T&C
+ *            Positions are dynamically computed and vertically centered
+ *            based on which elements are visible.
  *   Right → product image (bottom-aligned), offer badge (top-right flush)
  */
 const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
@@ -37,11 +70,15 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       showTnc,
       showBadge,
       showPrice,
+      showLogo,
+      showHeading,
+      showCta,
       subheadingText,
       tncText,
       brandLogoOverride,
       productNameOverride,
       priceOverride,
+      productImageOverride,
     } = state
 
     const brandLogo = brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
@@ -52,9 +89,19 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
     // Use price override if set, otherwise fall back to catalogue prices
     const displayPrice = priceOverride ?? selectedProduct?.price
 
+    // Effective product image: override > catalogue
+    const effectiveImageUrl = productImageOverride ?? selectedProduct?.imageUrl
+    const hasValidImage = productImageOverride
+      ? true
+      : selectedProduct?.hasValidImage ?? false
+
     // --- Adaptive font sizing for product name ---
     const headingMeasureRef = useRef<HTMLDivElement>(null)
     const [headingFontSize, setHeadingFontSize] = useState(PRODUCT_NAME.maxFontSize)
+    // Actual rendered height of the heading text (measured from DOM, not maxLines)
+    const [actualHeadingHeight, setActualHeadingHeight] = useState(
+      PRODUCT_NAME.maxFontSize * PRODUCT_NAME.lineHeight,
+    )
 
     useEffect(() => {
       const el = headingMeasureRef.current
@@ -75,30 +122,77 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         const maxHeight = maxLines * size * lineHeight
         if (el.scrollHeight <= maxHeight + 1) {
           setHeadingFontSize(size)
+          setActualHeadingHeight(el.scrollHeight)
           return
         }
       }
       setHeadingFontSize(minFontSize)
+      // At min font size, cap at max allowed height
+      setActualHeadingHeight(Math.min(el.scrollHeight, maxLines * minFontSize * lineHeight))
     }, [displayName])
 
-    // --- Compute logo+heading group position (bottom-anchored at groupBottomY) ---
-    const logoHeight = brandLogo ? BRAND_LOGO.height : 0
-    const gapHeight = brandLogo ? PRODUCT_NAME.logoHeadingGap : 0
-    const headingLineHeight = headingFontSize * PRODUCT_NAME.lineHeight
-    const headingMaxHeight = PRODUCT_NAME.maxLines * headingLineHeight
-    const totalGroupHeight = logoHeight + gapHeight + headingMaxHeight
+    // Use the actual measured height for layout, not the theoretical max
+    const headingHeight = actualHeadingHeight
 
-    let groupTopY: number
-    if (brandLogo) {
-      // Bottom-anchor the group at groupBottomY
-      groupTopY = PRODUCT_NAME.groupBottomY - totalGroupHeight
-    } else {
-      // No logo — heading starts at the top
-      groupTopY = PRODUCT_NAME.noLogoTopY
-    }
+    // --- Determine which elements are visible and their heights ---
+    const hasSubheading = showPrice
+      ? !!displayPrice
+      : !!subheadingText
 
-    const logoY = groupTopY
-    const headingY = groupTopY + logoHeight + gapHeight
+    const visibleElements = useMemo(() => {
+      const elements: Array<{ id: ElementId; height: number }> = []
+
+      if (showLogo && brandLogo) {
+        elements.push({ id: 'logo', height: BRAND_LOGO.height })
+      }
+      if (showHeading && displayName) {
+        elements.push({ id: 'heading', height: headingHeight })
+      }
+      if (hasSubheading) {
+        elements.push({ id: 'subheading', height: showPrice ? PRICE_HEIGHT : SUBHEADING_TEXT_HEIGHT })
+      }
+      if (showCta) {
+        elements.push({ id: 'cta', height: CTA_HEIGHT })
+      }
+      if (showTnc) {
+        elements.push({ id: 'tnc', height: TNC_HEIGHT })
+      }
+
+      return elements
+    }, [showLogo, brandLogo, showHeading, displayName, headingHeight, hasSubheading, showCta, showTnc])
+
+    // --- Compute dynamic vertical positions ---
+    // Elements are vertically centered as a group within the banner height.
+    const positions = useMemo(() => {
+      const posMap: Partial<Record<ElementId, number>> = {}
+      if (visibleElements.length === 0) return posMap
+
+      // Total height = sum of element heights + gaps between consecutive elements
+      let totalHeight = 0
+      for (let i = 0; i < visibleElements.length; i++) {
+        const el = visibleElements[i]!
+        totalHeight += el.height
+        const next = visibleElements[i + 1]
+        if (next) {
+          totalHeight += getGapBetween(el.id, next.id)
+        }
+      }
+
+      // Center the group vertically
+      let currentY = Math.max(0, (BANNER_HEIGHT - totalHeight) / 2)
+
+      for (let i = 0; i < visibleElements.length; i++) {
+        const el = visibleElements[i]!
+        posMap[el.id] = currentY
+        currentY += el.height
+        const next = visibleElements[i + 1]
+        if (next) {
+          currentY += getGapBetween(el.id, next.id)
+        }
+      }
+
+      return posMap
+    }, [visibleElements])
 
     // CTA background colour comes from the selected background
     const ctaBgColor = selectedBackground?.ctaColor ?? CTA_BUTTON.defaultBg
@@ -139,15 +233,15 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           />
         )}
 
-        {/* Brand Logo (top-left, within the group) */}
-        {brandLogo && (
+        {/* Brand Logo (dynamically positioned) */}
+        {showLogo && brandLogo && positions.logo !== undefined && (
           <img
             src={brandLogo}
             alt={selectedProduct?.provider.brandName ?? ''}
             style={{
               position: 'absolute',
               left: BRAND_LOGO.x,
-              top: logoY,
+              top: positions.logo,
               width: BRAND_LOGO.width,
               height: BRAND_LOGO.height,
               objectFit: 'contain',
@@ -156,13 +250,13 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           />
         )}
 
-        {/* Product Name (adaptive font, max 2 lines, supports override) */}
-        {displayName && (
+        {/* Product Name (adaptive font, max 2 lines, dynamically positioned) */}
+        {showHeading && displayName && positions.heading !== undefined && (
           <div
             style={{
               position: 'absolute',
               left: PRODUCT_NAME.x,
-              top: headingY,
+              top: positions.heading,
               width: PRODUCT_NAME.maxWidth,
               fontSize: headingFontSize,
               fontWeight: PRODUCT_NAME.fontWeight,
@@ -179,15 +273,15 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           </div>
         )}
 
-        {/* Price Display (subheading area, bottom-aligned at bottomY) */}
-        {showPrice && displayPrice && (
+        {/* Price Display (within the subheading slot, bottom-aligned internally) */}
+        {showPrice && displayPrice && positions.subheading !== undefined && (
           <div
             style={{
               position: 'absolute',
               left: PRICE_DISPLAY.x,
-              bottom: BANNER_HEIGHT - PRICE_DISPLAY.bottomY,
+              top: positions.subheading,
               display: 'flex',
-              alignItems: 'flex-end',
+              alignItems: 'baseline',
               gap: PRICE_DISPLAY.gap,
             }}
           >
@@ -218,12 +312,12 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         )}
 
         {/* Subheading Text (shown in subheading area when price is off) */}
-        {!showPrice && subheadingText && (
+        {!showPrice && subheadingText && positions.subheading !== undefined && (
           <div
             style={{
               position: 'absolute',
               left: SUBHEADING.x,
-              top: SUBHEADING.y,
+              top: positions.subheading,
               maxWidth: SUBHEADING.maxWidth,
               fontSize: SUBHEADING_TEXT.fontSize,
               fontWeight: SUBHEADING_TEXT.fontWeight,
@@ -231,47 +325,43 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               fontFamily: SUBHEADING_TEXT.fontFamily,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
-              lineHeight: 1,
             }}
           >
             {subheadingText}
           </div>
         )}
 
-        {/* CTA Button */}
-        <div
-          style={{
-            position: 'absolute',
-            left: CTA_BUTTON.x,
-            top: CTA_BUTTON.y,
-            paddingLeft: CTA_BUTTON.paddingX,
-            paddingRight: CTA_BUTTON.paddingX,
-            paddingTop: CTA_BUTTON.paddingY,
-            paddingBottom: CTA_BUTTON.paddingY,
-            fontSize: CTA_BUTTON.fontSize,
-            fontWeight: CTA_BUTTON.fontWeight,
-            lineHeight: CTA_BUTTON.lineHeight,
-            color: ctaTextColor,
-            backgroundColor: ctaBgColor,
-            borderRadius: CTA_BUTTON.borderRadius,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {ctaText}
-        </div>
+        {/* CTA Button (dynamically positioned) */}
+        {showCta && positions.cta !== undefined && (
+          <div
+            style={{
+              position: 'absolute',
+              left: CTA_BUTTON.x,
+              top: positions.cta,
+              paddingLeft: CTA_BUTTON.paddingX,
+              paddingRight: CTA_BUTTON.paddingX,
+              paddingTop: CTA_BUTTON.paddingY,
+              paddingBottom: CTA_BUTTON.paddingY,
+              fontSize: CTA_BUTTON.fontSize,
+              fontWeight: CTA_BUTTON.fontWeight,
+              lineHeight: CTA_BUTTON.lineHeight,
+              color: ctaTextColor,
+              backgroundColor: ctaBgColor,
+              borderRadius: CTA_BUTTON.borderRadius,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {ctaText}
+          </div>
+        )}
 
-        {/* T&C Text (8px below CTA button box edge) */}
-        {showTnc && (
+        {/* T&C Text (dynamically positioned below CTA) */}
+        {showTnc && positions.tnc !== undefined && (
           <div
             style={{
               position: 'absolute',
               left: TNC_TEXT.x,
-              // CTA box height = paddingY + fontSize*lineHeight + paddingY
-              top: CTA_BUTTON.y
-                + CTA_BUTTON.paddingY
-                + CTA_BUTTON.fontSize * CTA_BUTTON.lineHeight
-                + CTA_BUTTON.paddingY
-                + TNC_TEXT.gapBelowCta,
+              top: positions.tnc,
               fontSize: TNC_TEXT.fontSize,
               fontWeight: TNC_TEXT.fontWeight,
               color: TNC_TEXT.color,
@@ -306,10 +396,10 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         )}
 
         {/* Product Image (right half, bottom-aligned, centered at x=541.5) */}
-        {selectedProduct?.hasValidImage && (
+        {hasValidImage && effectiveImageUrl && (
           <img
-            src={selectedProduct.imageUrl}
-            alt={selectedProduct.name}
+            src={effectiveImageUrl}
+            alt={selectedProduct?.name ?? 'Product'}
             style={{
               position: 'absolute',
               bottom: PRODUCT_IMAGE.bottomOffset,

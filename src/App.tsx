@@ -34,7 +34,11 @@ function App() {
     brandLogoOverride,
     productNameOverride,
     showPrice,
+    showLogo,
+    showHeading,
+    showCta,
     subheadingText,
+    productImageOverride,
     selectProduct,
     selectBackground,
     setCtaText,
@@ -42,8 +46,13 @@ function App() {
     toggleTnc,
     toggleBadge,
     togglePrice,
+    toggleLogo,
+    toggleHeading,
+    toggleCta,
     setTncText,
     setProductNameOverride,
+    setBrandLogoOverride,
+    setProductImageOverride,
     priceOverride,
     setPriceOverride,
     setSubheadingText,
@@ -76,7 +85,7 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id])
 
-  // Also reset processed logo when user manually overrides the brand logo,
+  // Reset processed logo when user manually overrides the brand logo,
   // since the override replaces the URL that was processed.
   useEffect(() => {
     if (bgRemovedLogoUrl) {
@@ -86,6 +95,16 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandLogoOverride])
 
+  // Reset processed product image when user uploads a new product image,
+  // since the override replaces the URL that was processed.
+  useEffect(() => {
+    if (bgRemovedProductUrl) {
+      URL.revokeObjectURL(bgRemovedProductUrl)
+      setBgRemovedProductUrl(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productImageOverride])
+
   /**
    * Calls remove.bg for both the product image and brand logo (if available).
    * Uses Promise.allSettled so one failure doesn't block the other.
@@ -93,7 +112,8 @@ function App() {
   const handleRemoveBackground = useCallback(async () => {
     if (!selectedProduct) return
 
-    const productImageUrl = selectedProduct.imageUrl
+    // Use effective URLs: uploaded overrides take priority over catalogue originals
+    const productImageUrl = productImageOverride ?? selectedProduct.imageUrl
     const logoUrl = brandLogoOverride ?? selectedProduct.provider.brandLogo
 
     // Nothing to process
@@ -132,11 +152,11 @@ function App() {
     }
 
     setIsRemovingBg(false)
-  }, [selectedProduct, brandLogoOverride, addLog])
+  }, [selectedProduct, brandLogoOverride, productImageOverride, addLog])
 
   // Determine if the "Remove Background" button should be disabled:
   // no product, already processing, or both images already processed
-  const hasProductImage = !!selectedProduct?.imageUrl
+  const hasProductImage = !!(productImageOverride ?? selectedProduct?.imageUrl)
   const hasLogo = !!(brandLogoOverride ?? selectedProduct?.provider.brandLogo)
   const allAlreadyProcessed =
     (!hasProductImage || !!bgRemovedProductUrl) &&
@@ -165,11 +185,15 @@ function App() {
       showTnc,
       showBadge,
       showPrice,
+      showLogo,
+      showHeading,
+      showCta,
       subheadingText,
       tncText,
       brandLogoOverride: effectiveBrandLogo,
       productNameOverride,
       priceOverride,
+      productImageOverride,
     }
   }, [
     selectedProduct,
@@ -179,11 +203,15 @@ function App() {
     showTnc,
     showBadge,
     showPrice,
+    showLogo,
+    showHeading,
+    showCta,
     subheadingText,
     tncText,
     brandLogoOverride,
     productNameOverride,
     priceOverride,
+    productImageOverride,
     bgRemovedProductUrl,
     bgRemovedLogoUrl,
   ])
@@ -341,6 +369,16 @@ function App() {
             onPriceOverrideChange={setPriceOverride}
             subheadingText={subheadingText}
             onSubheadingTextChange={setSubheadingText}
+            showLogo={showLogo}
+            onLogoToggle={toggleLogo}
+            showHeading={showHeading}
+            onHeadingToggle={toggleHeading}
+            showCta={showCta}
+            onCtaToggle={toggleCta}
+            brandLogoOverride={brandLogoOverride}
+            onBrandLogoChange={setBrandLogoOverride}
+            productImageOverride={productImageOverride}
+            onProductImageChange={setProductImageOverride}
           />
         </div>
 

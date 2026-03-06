@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { BackgroundOption, ProductPrice } from '@/types'
 import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 import BackgroundGallery from '@/components/BackgroundGallery/BackgroundGallery'
+import ImageUploadZone from '@/components/ImageUploadZone/ImageUploadZone'
 
 const CTA_PRESETS = ['SHOP NOW', 'BUY NOW', 'ORDER NOW']
 const BADGE_PRESETS = ['Free Delivery', 'New Arrival', 'Limited Offer']
@@ -34,6 +35,19 @@ interface BannerControlsProps {
   /** Custom subheading text shown when price is toggled off */
   subheadingText: string
   onSubheadingTextChange: (text: string) => void
+  // --- New toggleable element props ---
+  showLogo: boolean
+  onLogoToggle: () => void
+  showHeading: boolean
+  onHeadingToggle: () => void
+  showCta: boolean
+  onCtaToggle: () => void
+  /** Current brand logo override (blob or remote URL). null = catalogue logo. */
+  brandLogoOverride: string | null
+  onBrandLogoChange: (url: string | null) => void
+  /** Current product image override (blob URL). null = catalogue image. */
+  productImageOverride: string | null
+  onProductImageChange: (url: string | null) => void
 }
 
 export default function BannerControls({
@@ -59,31 +73,60 @@ export default function BannerControls({
   onPriceOverrideChange,
   subheadingText,
   onSubheadingTextChange,
+  showLogo,
+  onLogoToggle,
+  showHeading,
+  onHeadingToggle,
+  showCta,
+  onCtaToggle,
+  brandLogoOverride,
+  onBrandLogoChange,
+  productImageOverride,
+  onProductImageChange,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
 
   return (
     <div className="space-y-5 p-3">
-      {/* Product Name Override */}
+      {/* Brand Logo — toggle + upload zone */}
+      <Section title="Brand Logo">
+        <TogglePill checked={showLogo} onToggle={onLogoToggle} />
+        {showLogo && (
+          <div className="mt-2">
+            <ImageUploadZone
+              currentImage={brandLogoOverride}
+              onImageChange={onBrandLogoChange}
+              label="Brand Logo"
+            />
+          </div>
+        )}
+      </Section>
+
+      {/* Product Name — toggle + text override */}
       <Section title="Product Name">
-        <input
-          type="text"
-          value={productNameOverride ?? originalProductName ?? ''}
-          onChange={(e) => {
-            const value = e.target.value
-            // Reset to null when the user types back the exact original name
-            onProductNameChange(value === originalProductName ? null : value)
-          }}
-          className="input-base"
-          placeholder="Product name..."
-        />
-        {productNameOverride !== null && (
-          <button
-            onClick={() => onProductNameChange(null)}
-            className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] mt-1 cursor-pointer transition-interaction"
-          >
-            Reset to original
-          </button>
+        <TogglePill checked={showHeading} onToggle={onHeadingToggle} />
+        {showHeading && (
+          <div className="mt-2">
+            <input
+              type="text"
+              value={productNameOverride ?? originalProductName ?? ''}
+              onChange={(e) => {
+                const value = e.target.value
+                // Reset to null when the user types back the exact original name
+                onProductNameChange(value === originalProductName ? null : value)
+              }}
+              className="input-base"
+              placeholder="Product name..."
+            />
+            {productNameOverride !== null && (
+              <button
+                onClick={() => onProductNameChange(null)}
+                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] mt-1 cursor-pointer transition-interaction"
+              >
+                Reset to original
+              </button>
+            )}
+          </div>
         )}
       </Section>
 
@@ -123,20 +166,25 @@ export default function BannerControls({
         />
       </Section>
 
-      {/* CTA Button Text */}
+      {/* CTA Button — toggle + text + presets */}
       <Section title="CTA Button">
-        <input
-          type="text"
-          value={ctaText}
-          onChange={(e) => onCtaChange(e.target.value)}
-          className="input-base"
-          placeholder="Button text..."
-        />
-        <PresetChips
-          presets={CTA_PRESETS}
-          current={ctaText}
-          onSelect={onCtaChange}
-        />
+        <TogglePill checked={showCta} onToggle={onCtaToggle} />
+        {showCta && (
+          <div className="mt-2">
+            <input
+              type="text"
+              value={ctaText}
+              onChange={(e) => onCtaChange(e.target.value)}
+              className="input-base"
+              placeholder="Button text..."
+            />
+            <PresetChips
+              presets={CTA_PRESETS}
+              current={ctaText}
+              onSelect={onCtaChange}
+            />
+          </div>
+        )}
       </Section>
 
       {/* Offer Badge */}
@@ -237,6 +285,15 @@ export default function BannerControls({
             )}
           </div>
         )}
+      </Section>
+
+      {/* Product Image — upload zone */}
+      <Section title="Product Image">
+        <ImageUploadZone
+          currentImage={productImageOverride}
+          onImageChange={onProductImageChange}
+          label="Product Image"
+        />
       </Section>
     </div>
   )

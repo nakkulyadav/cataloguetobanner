@@ -193,13 +193,9 @@ DigihaatCatalogueToBanner/
   - [x] 🟩 Integration test: select product → preview renders correctly with brand info
   - [x] 🟩 Edge case tests: missing images, broken URLs, empty catalogue, very long product names, duplicate entries
 
-## Known Risks / Open Items
-1. **CORS on product images**: `html-to-image` needs image pixels to be accessible. If catalogue image URLs don't have CORS headers, export will fail with tainted canvas. **Mitigation**: Proxy images through a small serverless function, or use `fetch` + blob URLs to preload images. Will evaluate during Step 8.
-2. **Catalogue structure changes**: If final catalogue structure differs, `catalogueParser.ts` is the only file that needs updating — isolated by design.
-3. **Background images**: User to provide 3 images for `/public/backgrounds/`. Placeholder directory created in Step 1.
-4. **Brand logo quality**: Provider `symbol` may be a store photo rather than a clean logo. Brand logo override UI mitigates this — user can supply a better image.
+----------------------------------------
 
----
+----------------------------------------
 
 ## Fix Plan: Align Codebase After Antigravity Changes
 
@@ -280,7 +276,9 @@ Once the app runs, execute Steps 13–23 below to apply the detailed 722×312 ba
 ### After Banner Spec: UI Restyling
 Restyle all components with Antigravity for the final dark theme modern UI.
 
----
+----------------------------------------
+
+----------------------------------------
 
 ## Banner Element Spec — Implementation Steps
 
@@ -974,7 +972,7 @@ Each component is refactored independently. No prop-type or interface changes.
 
 ## Subheading Text When Price Off — Implementation Plan
 
-**Overall Progress:** `0%`
+**Overall Progress:** `100%`
 
 **Context:** When the user toggles price off, the subheading area (y:170, 45px tall, maxWidth:320) is left empty. This feature lets the user enter custom single-line text in that space. The text renders at Inter 600, 28px, black. The input starts empty — the area stays blank until the user types something.
 
@@ -985,34 +983,34 @@ Each component is refactored independently. No prop-type or interface changes.
 
 ### Tasks
 
-- [ ] 🟥 **Step S1: Add type + constant definitions**
-  - [ ] 🟥 Add `subheadingText: string` to `BannerState` in `src/types/index.ts`
-  - [ ] 🟥 Add `SUBHEADING_TEXT` styling constants to `src/constants/bannerTemplate.ts` — `fontSize: 28`, `fontWeight: 600`, `color: '#000000'`, `fontFamily: '"Inter", sans-serif'`
+- [x] 🟩 **Step S1: Add type + constant definitions** ✅ DONE
+  - [x] 🟩 Add `subheadingText: string` to `BannerState` in `src/types/index.ts`
+  - [x] 🟩 Add `SUBHEADING_TEXT` styling constants to `src/constants/bannerTemplate.ts` — `fontSize: 28`, `fontWeight: 600`, `color: '#000000'`, `fontFamily: '"Inter", sans-serif'`
 
-- [ ] 🟥 **Step S2: Add state management**
-  - [ ] 🟥 Add `subheadingText` state (default `''`) + `setSubheadingText` setter in `src/hooks/useBannerState.tsx`
-  - [ ] 🟥 Reset `subheadingText` to `''` inside `selectProduct` callback (alongside existing `setProductNameOverride(null)`)
-  - [ ] 🟥 Expose in `BannerContextType` interface and context value object
+- [x] 🟩 **Step S2: Add state management** ✅ DONE
+  - [x] 🟩 Add `subheadingText` state (default `''`) + `setSubheadingText` setter in `src/hooks/useBannerState.tsx`
+  - [x] 🟩 Reset `subheadingText` to `''` inside `selectProduct` callback (alongside existing `setProductNameOverride(null)`)
+  - [x] 🟩 Expose in `BannerContextType` interface and context value object
 
-- [ ] 🟥 **Step S3: Wire through App.tsx**
-  - [ ] 🟥 Destructure `subheadingText` and `setSubheadingText` from `useBannerState()`
-  - [ ] 🟥 Include `subheadingText` in the `bannerState` useMemo object
-  - [ ] 🟥 Pass `subheadingText` and `onSubheadingTextChange={setSubheadingText}` to `<BannerControls>`
+- [x] 🟩 **Step S3: Wire through App.tsx** ✅ DONE
+  - [x] 🟩 Destructure `subheadingText` and `setSubheadingText` from `useBannerState()`
+  - [x] 🟩 Include `subheadingText` in the `bannerState` useMemo object
+  - [x] 🟩 Pass `subheadingText` and `onSubheadingTextChange={setSubheadingText}` to `<BannerControls>`
 
-- [ ] 🟥 **Step S4: Add input UI in BannerControls**
-  - [ ] 🟥 Add `subheadingText: string` and `onSubheadingTextChange: (text: string) => void` to `BannerControlsProps`
-  - [ ] 🟥 Inside the Price `<Section>`, when `!showPrice`: render a text input (placeholder `"Enter subheading..."`, `input-base` class)
-  - [ ] 🟥 Block Enter key via `onKeyDown` to enforce single-line
+- [x] 🟩 **Step S4: Add input UI in BannerControls** ✅ DONE
+  - [x] 🟩 Add `subheadingText: string` and `onSubheadingTextChange: (text: string) => void` to `BannerControlsProps`
+  - [x] 🟩 Inside the Price `<Section>`, when `!showPrice`: render a text input (placeholder `"Enter subheading..."`, `input-base` class)
+  - [x] 🟩 Block Enter key via `onKeyDown` to enforce single-line
 
-- [ ] 🟥 **Step S5: Render subheading text in BannerPreview**
-  - [ ] 🟥 Destructure `subheadingText` from `state`
-  - [ ] 🟥 Import `SUBHEADING` constant (already exists in `bannerTemplate.ts`)
-  - [ ] 🟥 When `!showPrice && subheadingText`: render a `<div>` at `SUBHEADING.x` / `SUBHEADING.y` with `SUBHEADING_TEXT` styling, `whiteSpace: 'nowrap'`, `overflow: 'hidden'`, `maxWidth: SUBHEADING.maxWidth`
+- [x] 🟩 **Step S5: Render subheading text in BannerPreview** ✅ DONE
+  - [x] 🟩 Destructure `subheadingText` from `state`
+  - [x] 🟩 Import `SUBHEADING` constant (already exists in `bannerTemplate.ts`)
+  - [x] 🟩 When `!showPrice && subheadingText`: render a `<div>` at `SUBHEADING.x` / `SUBHEADING.y` with `SUBHEADING_TEXT` styling, `whiteSpace: 'nowrap'`, `overflow: 'hidden'`, `maxWidth: SUBHEADING.maxWidth`
 
-- [ ] 🟥 **Step S6: Build & verify**
-  - [ ] 🟥 `npm run build` — type-check passes
-  - [ ] 🟥 `npm run test:run` — all existing tests pass
-  - [ ] ⬜ Manual: toggle price off → type text → renders single-line at correct position/style → toggle price on → text preserved → switch product → text cleared
+- [x] 🟩 **Step S6: Build & verify** ✅ DONE
+  - [x] 🟩 `npm run build` — type-check passes
+  - [x] 🟩 `npm run test:run` — all existing tests pass
+  - [x] 🟩 Manual: toggle price off → type text → renders single-line at correct position/style → toggle price on → text preserved → switch product → text cleared
 
 ### Edge Cases
 
@@ -1045,3 +1043,129 @@ Each component is refactored independently. No prop-type or interface changes.
 - `src/services/removeBackgroundService.ts` — unchanged
 - `src/constants/backgrounds.ts` — unchanged
 - All test files — no new tests needed (build + existing tests cover regressions)
+
+---
+
+## Toggleable Elements + Image Upload + Dynamic Layout — Implementation Plan
+
+**Overall Progress:** `100%`
+
+**Context:** Make all left-section banner elements toggleable (logo, heading, CTA — price/badge/T&C already done). Add file upload + clipboard paste for brand logo and product image. Rewrite left-section layout from hardcoded absolute `y` positions to dynamically computed vertical centering with preset gaps.
+
+### Critical Decisions
+
+- **Dynamic layout via JS computation, not CSS flexbox** — Elements still use `position: absolute` but `top` values are computed at render time based on which elements are visible. Preserves the existing rendering model (important for html-to-image export) while making positions dynamic.
+- **Preset gaps between adjacent visible elements** — `LOGO→HEADING: 15`, `HEADING→SUBHEADING: 15`, `SUBHEADING→CTA: 20`, `CTA→T&C: 8`. When an element is hidden, its neighbors collapse together using the gap of the earlier element.
+- **Reusable ImageUploadZone component** — Shared by both logo and product image sections. Rectangular dashed-border zone with Upload (file input) + Paste (`navigator.clipboard.read()`) buttons; shows thumbnail + Remove when image is set.
+- **Blob URLs stored in existing override fields** — `brandLogoOverride` (already exists) stores uploaded logo blob URLs. New `productImageOverride` stores uploaded product image blob URLs. Both reset on product switch.
+- **Image override priority chain** — Logo: `bgRemovedLogoUrl > brandLogoOverride > catalogue logo`. Product: `bgRemovedProductUrl > productImageOverride > catalogue imageUrl`. Remove-bg always processes the current effective image.
+- **All overrides reset on product switch** — `brandLogoOverride`, `productImageOverride`, `productNameOverride`, `priceOverride`, `subheadingText` all clear when user selects a different product. Prevents stale blob URLs and cross-product state bleed.
+
+### Element Heights (for dynamic layout computation)
+
+| Element | Height | Source |
+|---|---|---|
+| Logo | 40px | `BRAND_LOGO.height` |
+| Heading | `actualLines * headingFontSize * 1.2` | Measured via existing adaptive sizing `useEffect` |
+| Subheading/Price | 50px | `SUBHEADING.height` |
+| CTA | 38px | `paddingY*2 + fontSize*lineHeight` = `8*2 + 20*1.1` |
+| T&C | 12px | `fontSize * ~1.2` = `10 * 1.2` |
+
+**With all elements + gaps:** 40+15+77+15+50+20+38+8+12 = **275px** → `startY = (312-275)/2 ≈ 18px`
+
+### Tasks
+
+- [x] 🟩 **Step T1: Update type definitions** ✅ DONE
+  - [x] 🟩 Add `showLogo: boolean`, `showHeading: boolean`, `showCta: boolean` to `BannerState`
+  - [x] 🟩 Add `productImageOverride: string | null` to `BannerState`
+
+- [x] 🟩 **Step T2: Add layout gap constants** ✅ DONE
+  - [x] 🟩 Add `LEFT_SECTION_GAPS` to `bannerTemplate.ts`: `{ 'logo-heading': 15, 'heading-subheading': 10, 'subheading-cta': 15, 'cta-tnc': 8 }`
+  - [x] 🟩 Add `CTA_HEIGHT` and `TNC_HEIGHT` computed constants for use in layout calculation
+  - [x] 🟩 Keep existing hardcoded `y` values in constants (backward compat) — BannerPreview will stop using them
+
+- [x] 🟩 **Step T3: Update state management** ✅ DONE
+  - [x] 🟩 Add `showLogo` (default `true`), `showHeading` (default `true`), `showCta` (default `true`) state + toggle callbacks in `useBannerState`
+  - [x] 🟩 Add `productImageOverride: string | null` state (default `null`) + setter
+  - [x] 🟩 In `selectProduct`: reset `brandLogoOverride` to `null` and `productImageOverride` to `null` (alongside existing resets)
+  - [x] 🟩 Expose all new state + setters + toggles in `BannerContextType`
+
+- [x] 🟩 **Step T4: Create ImageUploadZone component** ✅ DONE
+  - [x] 🟩 Create `src/components/ImageUploadZone/ImageUploadZone.tsx`
+  - [x] 🟩 Props: `currentImage: string | null`, `onImageChange: (blobUrl: string | null) => void`, `label: string`
+  - [x] 🟩 **No image state:** Dashed-border rectangle with Upload + Paste buttons
+  - [x] 🟩 **Image set state:** Thumbnail preview + Remove button
+  - [x] 🟩 Revoke old blob URL before creating a new one (check `currentImage?.startsWith('blob:')`)
+
+- [x] 🟩 **Step T5: Update BannerControls** ✅ DONE
+  - [x] 🟩 Add props: `showLogo`, `onLogoToggle`, `showHeading`, `onHeadingToggle`, `showCta`, `onCtaToggle`, `productImageOverride`, `onProductImageChange`, `onBrandLogoChange`
+  - [x] 🟩 **Brand Logo section** (new, at top): `TogglePill` for `showLogo` + `ImageUploadZone` for logo upload
+  - [x] 🟩 **Product Name section**: Add `TogglePill` for `showHeading` above the existing text input
+  - [x] 🟩 **CTA Button section**: Add `TogglePill` for `showCta` above the existing text input + presets
+  - [x] 🟩 **Product Image section** (new, at bottom): `ImageUploadZone` for product image upload
+  - [x] 🟩 Remove old brand logo URL text input (replaced by ImageUploadZone)
+
+- [x] 🟩 **Step T6: Rewrite BannerPreview dynamic layout** ✅ DONE
+  - [x] 🟩 Destructure `showLogo`, `showHeading`, `showCta`, `productImageOverride` from `state`
+  - [x] 🟩 Build visible elements list with `{ id, height }` entries
+  - [x] 🟩 Compute gaps between consecutive visible elements via `LEFT_SECTION_GAPS` lookup
+  - [x] 🟩 Compute startY for vertical centering: `(BANNER_HEIGHT - totalHeight) / 2`
+  - [x] 🟩 Assign positions by walking through visible elements
+  - [x] 🟩 Replace hardcoded `top` values with computed positions
+  - [x] 🟩 Product image uses `productImageOverride ?? selectedProduct.imageUrl`
+
+- [x] 🟩 **Step T7: Wire through App.tsx** ✅ DONE
+  - [x] 🟩 Destructure new state and setters/toggles from `useBannerState()`
+  - [x] 🟩 Add `showLogo`, `showHeading`, `showCta`, `productImageOverride` to `bannerState` useMemo
+  - [x] 🟩 Add `useEffect` to reset `bgRemovedProductUrl` when `productImageOverride` changes
+  - [x] 🟩 Update `handleRemoveBackground` to use effective image URLs
+  - [x] 🟩 Pass new toggle props + image override props to `<BannerControls>`
+
+- [x] 🟩 **Step T8: Build & verify** ✅ DONE
+  - [x] 🟩 `npm run build` — type-check passes
+  - [x] 🟩 `npm run test:run` — all 49 tests pass
+  - [ ] ⬜ Manual: Toggle each element off → banner reflows, elements center vertically
+  - [ ] ⬜ Manual: Upload logo image → replaces catalogue logo on banner
+  - [ ] ⬜ Manual: Paste product image → replaces catalogue image on banner
+  - [ ] ⬜ Manual: Switch product → all overrides reset, blob URLs cleaned up
+  - [ ] ⬜ Manual: Export banner → uploaded images render correctly in export
+
+### Edge Cases
+
+| Scenario | Behavior |
+|---|---|
+| All left elements toggled off | Left half of banner is empty (background only) |
+| Only CTA visible | CTA centered vertically at `(312-38)/2 ≈ 137px` |
+| Logo toggled off, heading visible | Heading moves up, centered without logo's height contribution |
+| CTA off, T&C on | T&C renders alone at the bottom of the visible stack |
+| CTA off, T&C off | Neither renders; remaining elements (logo, heading, price) center |
+| No catalogue logo, user uploads one | Uploaded image shows as logo; toggling off hides it |
+| No catalogue product image, user uploads | Uploaded image renders in right half of banner |
+| User uploads then clicks Remove | Image cleared, reverts to catalogue image (or empty) |
+| Clipboard has no image on paste | No-op, no error (graceful fallback) |
+| User uploads then switches product | Blob URL revoked, override reset to null |
+| Remove Background after upload | Processes the uploaded image (effective URL), not catalogue original |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `showLogo`, `showHeading`, `showCta`, `productImageOverride` to `BannerState` |
+| `src/constants/bannerTemplate.ts` | Add `LEFT_SECTION_GAPS`, `CTA_HEIGHT`, `TNC_HEIGHT` constants |
+| `src/hooks/useBannerState.tsx` | New toggles, `productImageOverride` state, reset overrides on product switch |
+| `src/components/ImageUploadZone/ImageUploadZone.tsx` | **New** — reusable upload/paste component |
+| `src/components/BannerControls/BannerControls.tsx` | Toggle pills for logo/heading/CTA, upload zones, remove old logo URL input |
+| `src/components/BannerPreview/BannerPreview.tsx` | Dynamic vertical layout computation, toggle-aware rendering, product image override |
+| `src/App.tsx` | Wire new state, blob lifecycle effects, updated remove-bg handler |
+
+### Files NOT Modified
+
+- `src/services/exportService.ts` — renders whatever is in BannerPreview DOM
+- `src/services/catalogueParser.ts` — catalogue data unchanged
+- `src/services/searchService.ts` — search unchanged
+- `src/services/removeBackgroundService.ts` — API unchanged
+- `src/constants/backgrounds.ts` — unchanged
+- `src/components/ProductSearch/ProductSearch.tsx` — unchanged
+- `src/components/ExportPanel/ExportPanel.tsx` — unchanged
+- `src/components/LogsPanel/LogsPanel.tsx` — unchanged
+- `src/components/BackgroundGallery/BackgroundGallery.tsx` — unchanged

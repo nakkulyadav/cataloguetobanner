@@ -16,6 +16,10 @@ interface BannerContextType extends BannerState {
   setPriceOverride: (price: ProductPrice | null) => void;
   togglePrice: () => void;
   setSubheadingText: (text: string) => void;
+  toggleLogo: () => void;
+  toggleHeading: () => void;
+  toggleCta: () => void;
+  setProductImageOverride: (url: string | null) => void;
 }
 
 const BannerContext = createContext<BannerContextType | undefined>(undefined);
@@ -33,17 +37,27 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [showPrice, setShowPrice] = useState(true);
   const [priceOverride, setPriceOverride] = useState<ProductPrice | null>(null);
   const [subheadingText, setSubheadingText] = useState('');
+  const [showLogo, setShowLogo] = useState(true);
+  const [showHeading, setShowHeading] = useState(true);
+  const [showCta, setShowCta] = useState(true);
+  const [productImageOverride, setProductImageOverride] = useState<string | null>(null);
 
   const toggleTnc = useCallback(() => setShowTnc(prev => !prev), []);
   const toggleBadge = useCallback(() => setShowBadge(prev => !prev), []);
   const togglePrice = useCallback(() => setShowPrice(prev => !prev), []);
+  const toggleLogo = useCallback(() => setShowLogo(prev => !prev), []);
+  const toggleHeading = useCallback(() => setShowHeading(prev => !prev), []);
+  const toggleCta = useCallback(() => setShowCta(prev => !prev), []);
 
-  // Wrap selectProduct to reset the name override when switching products
+  // Reset all per-product overrides when switching products.
+  // Prevents stale blob URLs and cross-product state bleed.
   const selectProduct = useCallback((product: ParsedProduct | null) => {
     setSelectedProduct(product);
     setProductNameOverride(null);
     setPriceOverride(null);
     setSubheadingText('');
+    setBrandLogoOverride(null);
+    setProductImageOverride(null);
   }, []);
 
   const value: BannerContextType = {
@@ -55,11 +69,15 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showTnc,
     showBadge,
     showPrice,
+    showLogo,
+    showHeading,
+    showCta,
     subheadingText,
     tncText,
     brandLogoOverride,
     productNameOverride,
     priceOverride,
+    productImageOverride,
     // Setters & toggles
     selectProduct,
     selectBackground: setSelectedBackground,
@@ -75,6 +93,10 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setPriceOverride,
     togglePrice,
     setSubheadingText,
+    toggleLogo,
+    toggleHeading,
+    toggleCta,
+    setProductImageOverride,
   };
 
   return (

@@ -59,6 +59,12 @@ export interface BannerState {
   showTnc: boolean;
   showBadge: boolean;
   showPrice: boolean;
+  /** Toggle visibility of the brand logo element on the banner */
+  showLogo: boolean;
+  /** Toggle visibility of the product name heading on the banner */
+  showHeading: boolean;
+  /** Toggle visibility of the CTA button on the banner */
+  showCta: boolean;
   /** Custom text rendered in the subheading area when price is toggled off */
   subheadingText: string;
   tncText: string;
@@ -67,6 +73,8 @@ export interface BannerState {
   productNameOverride: string | null;
   /** Custom price override for the banner. null = use original catalogue prices. */
   priceOverride: ProductPrice | null;
+  /** Uploaded product image blob URL override. null = use catalogue image. */
+  productImageOverride: string | null;
 }
 
 // --- Logging ---
