@@ -7,6 +7,7 @@ import {
   BANNER_FALLBACK_BG,
   BRAND_LOGO,
   PRODUCT_NAME,
+  HEADING_COMPACT,
   CTA_BUTTON,
   TNC_TEXT,
   OFFER_BADGE,
@@ -15,6 +16,8 @@ import {
   SUBHEADING,
   SUBHEADING_TEXT,
   LEFT_SECTION_GAPS,
+  LEFT_SECTION_TOP_PADDING,
+  LEFT_SECTION_BOTTOM_PADDING,
   PRICE_HEIGHT,
   SUBHEADING_TEXT_HEIGHT,
   CTA_HEIGHT,
@@ -26,7 +29,7 @@ interface BannerPreviewProps {
 }
 
 // --- Element identifiers for the dynamic layout system ---
-type ElementId = 'logo' | 'heading' | 'subheading' | 'cta' | 'tnc'
+type ElementId = 'logo' | 'heading' | 'subheading' | 'price' | 'cta' | 'tnc'
 
 /**
  * Look up the gap between two adjacent visible elements.
@@ -40,7 +43,7 @@ function getGapBetween(a: ElementId, b: ElementId): number {
 
   // For non-adjacent pairs, use the gap defined for the earlier element's
   // natural next neighbour. The ordered list ensures correct lookup.
-  const ordered: ElementId[] = ['logo', 'heading', 'subheading', 'cta', 'tnc']
+  const ordered: ElementId[] = ['logo', 'heading', 'subheading', 'price', 'cta', 'tnc']
   const idxA = ordered.indexOf(a)
   for (let i = idxA; i < ordered.length - 1; i++) {
     const gapKey = `${ordered[i]}-${ordered[i + 1]}`
@@ -55,7 +58,7 @@ function getGapBetween(a: ElementId, b: ElementId): number {
  * The 722×312px banner preview component.
  *
  * Layout: 50/50 split at x=361.
- *   Left  → logo, product name, subheading/price, CTA, T&C
+ *   Left  → logo, heading, subheading, price, CTA, T&C
  *            Positions are dynamically computed and vertically centered
  *            based on which elements are visible.
  *   Right → product image (bottom-aligned), offer badge (top-right flush)
@@ -73,6 +76,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       showLogo,
       showHeading,
       showCta,
+      showSubheading,
       subheadingText,
       tncText,
       brandLogoOverride,
@@ -95,6 +99,26 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       ? true
       : selectedProduct?.hasValidImage ?? false
 
+    // --- Heading config: normal vs compact ---
+    // When subheading is active, heading shrinks to a fixed single-line compact mode.
+    const headingConfig = showSubheading
+      ? {
+        fontSize: HEADING_COMPACT.maxFontSize,
+        fontWeight: HEADING_COMPACT.fontWeight,
+        lineHeight: HEADING_COMPACT.lineHeight,
+        maxLines: HEADING_COMPACT.maxLines,
+        minFontSize: HEADING_COMPACT.minFontSize,
+        fontSizeStep: HEADING_COMPACT.fontSizeStep,
+      }
+      : {
+        fontSize: PRODUCT_NAME.maxFontSize,
+        fontWeight: PRODUCT_NAME.fontWeight,
+        lineHeight: PRODUCT_NAME.lineHeight,
+        maxLines: PRODUCT_NAME.maxLines,
+        minFontSize: PRODUCT_NAME.minFontSize,
+        fontSizeStep: PRODUCT_NAME.fontSizeStep,
+      }
+
     // --- Adaptive font sizing for product name ---
     const headingMeasureRef = useRef<HTMLDivElement>(null)
     const [headingFontSize, setHeadingFontSize] = useState(PRODUCT_NAME.maxFontSize)
@@ -107,38 +131,35 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       const el = headingMeasureRef.current
       if (!el || !displayName) return
 
-      const { maxWidth, maxLines, lineHeight, maxFontSize, minFontSize, fontSizeStep, fontWeight, fontFamily } = PRODUCT_NAME
+      const { maxWidth, fontFamily } = PRODUCT_NAME
+      const { fontSize: maxSize, minFontSize: minSize, fontSizeStep: step, fontWeight: weight, lineHeight: lh, maxLines } = headingConfig
 
-      for (let size = maxFontSize; size >= minFontSize; size -= fontSizeStep) {
+      for (let size = maxSize; size >= minSize; size -= step) {
         el.style.fontSize = `${size}px`
-        el.style.lineHeight = `${lineHeight}`
-        el.style.fontWeight = String(fontWeight)
+        el.style.lineHeight = `${lh}`
+        el.style.fontWeight = String(weight)
         el.style.fontFamily = fontFamily
         el.style.width = `${maxWidth}px`
         el.style.wordBreak = 'break-word'
         el.style.whiteSpace = 'normal'
         el.textContent = displayName
 
-        const maxHeight = maxLines * size * lineHeight
+        const maxHeight = maxLines * size * lh
         if (el.scrollHeight <= maxHeight + 1) {
           setHeadingFontSize(size)
           setActualHeadingHeight(el.scrollHeight)
           return
         }
       }
-      setHeadingFontSize(minFontSize)
+      setHeadingFontSize(minSize)
       // At min font size, cap at max allowed height
-      setActualHeadingHeight(Math.min(el.scrollHeight, maxLines * minFontSize * lineHeight))
-    }, [displayName])
+      setActualHeadingHeight(Math.min(el.scrollHeight, maxLines * minSize * lh))
+    }, [displayName, headingConfig])
 
     // Use the actual measured height for layout, not the theoretical max
     const headingHeight = actualHeadingHeight
 
     // --- Determine which elements are visible and their heights ---
-    const hasSubheading = showPrice
-      ? !!displayPrice
-      : !!subheadingText
-
     const visibleElements = useMemo(() => {
       const elements: Array<{ id: ElementId; height: number }> = []
 
@@ -148,8 +169,11 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       if (showHeading && displayName) {
         elements.push({ id: 'heading', height: headingHeight })
       }
-      if (hasSubheading) {
-        elements.push({ id: 'subheading', height: showPrice ? PRICE_HEIGHT : SUBHEADING_TEXT_HEIGHT })
+      if (showSubheading && subheadingText) {
+        elements.push({ id: 'subheading', height: SUBHEADING_TEXT_HEIGHT })
+      }
+      if (showPrice && displayPrice) {
+        elements.push({ id: 'price', height: PRICE_HEIGHT })
       }
       if (showCta) {
         elements.push({ id: 'cta', height: CTA_HEIGHT })
@@ -159,7 +183,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       }
 
       return elements
-    }, [showLogo, brandLogo, showHeading, displayName, headingHeight, hasSubheading, showCta, showTnc])
+    }, [showLogo, brandLogo, showHeading, displayName, headingHeight, showSubheading, subheadingText, showPrice, displayPrice, showCta, showTnc])
 
     // --- Compute dynamic vertical positions ---
     // Elements are vertically centered as a group within the banner height.
@@ -178,8 +202,9 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         }
       }
 
-      // Center the group vertically
-      let currentY = Math.max(0, (BANNER_HEIGHT - totalHeight) / 2)
+      // Center the group within the padded vertical bounds
+      const usableHeight = BANNER_HEIGHT - LEFT_SECTION_TOP_PADDING - LEFT_SECTION_BOTTOM_PADDING
+      let currentY = LEFT_SECTION_TOP_PADDING + Math.max(0, (usableHeight - totalHeight) / 2)
 
       for (let i = 0; i < visibleElements.length; i++) {
         const el = visibleElements[i]!
@@ -250,7 +275,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           />
         )}
 
-        {/* Product Name (adaptive font, max 2 lines, dynamically positioned) */}
+        {/* Product Name — normal (adaptive multi-line) or compact (fixed single-line) */}
         {showHeading && displayName && positions.heading !== undefined && (
           <div
             style={{
@@ -259,12 +284,12 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               top: positions.heading,
               width: PRODUCT_NAME.maxWidth,
               fontSize: headingFontSize,
-              fontWeight: PRODUCT_NAME.fontWeight,
+              fontWeight: headingConfig.fontWeight,
               color: PRODUCT_NAME.color,
-              lineHeight: PRODUCT_NAME.lineHeight,
+              lineHeight: headingConfig.lineHeight,
               overflow: 'hidden',
               display: '-webkit-box',
-              WebkitLineClamp: PRODUCT_NAME.maxLines,
+              WebkitLineClamp: headingConfig.maxLines,
               WebkitBoxOrient: 'vertical',
               wordBreak: 'break-word',
             }}
@@ -273,13 +298,33 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           </div>
         )}
 
-        {/* Price Display (within the subheading slot, bottom-aligned internally) */}
-        {showPrice && displayPrice && positions.subheading !== undefined && (
+        {/* Subheading Text (independent element, shown when showSubheading is ON) */}
+        {showSubheading && subheadingText && positions.subheading !== undefined && (
+          <div
+            style={{
+              position: 'absolute',
+              left: SUBHEADING.x,
+              top: positions.subheading,
+              maxWidth: SUBHEADING.maxWidth,
+              fontSize: SUBHEADING_TEXT.fontSize,
+              fontWeight: SUBHEADING_TEXT.fontWeight,
+              color: SUBHEADING_TEXT.color,
+              fontFamily: SUBHEADING_TEXT.fontFamily,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}
+          >
+            {subheadingText}
+          </div>
+        )}
+
+        {/* Price Display (independent element, baseline-aligned MRP + selling price) */}
+        {showPrice && displayPrice && positions.price !== undefined && (
           <div
             style={{
               position: 'absolute',
               left: PRICE_DISPLAY.x,
-              top: positions.subheading,
+              top: positions.price,
               display: 'flex',
               alignItems: 'baseline',
               gap: PRICE_DISPLAY.gap,
@@ -308,26 +353,6 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
             >
               {displayPrice.sellingPrice}
             </span>
-          </div>
-        )}
-
-        {/* Subheading Text (shown in subheading area when price is off) */}
-        {!showPrice && subheadingText && positions.subheading !== undefined && (
-          <div
-            style={{
-              position: 'absolute',
-              left: SUBHEADING.x,
-              top: positions.subheading,
-              maxWidth: SUBHEADING.maxWidth,
-              fontSize: SUBHEADING_TEXT.fontSize,
-              fontWeight: SUBHEADING_TEXT.fontWeight,
-              color: SUBHEADING_TEXT.color,
-              fontFamily: SUBHEADING_TEXT.fontFamily,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-            }}
-          >
-            {subheadingText}
           </div>
         )}
 

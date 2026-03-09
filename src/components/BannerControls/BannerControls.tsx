@@ -32,10 +32,13 @@ interface BannerControlsProps {
   /** Original prices from catalogue (undefined = no price data) */
   originalPrice: ProductPrice | undefined
   onPriceOverrideChange: (price: ProductPrice | null) => void
-  /** Custom subheading text shown when price is toggled off */
+  /** Custom subheading text (independent element, shown when showSubheading is ON) */
   subheadingText: string
   onSubheadingTextChange: (text: string) => void
-  // --- New toggleable element props ---
+  /** Toggle visibility of the subheading element (activates compact heading mode) */
+  showSubheading: boolean
+  onSubheadingToggle: () => void
+  // --- Toggleable element props ---
   showLogo: boolean
   onLogoToggle: () => void
   showHeading: boolean
@@ -73,6 +76,8 @@ export default function BannerControls({
   onPriceOverrideChange,
   subheadingText,
   onSubheadingTextChange,
+  showSubheading,
+  onSubheadingToggle,
   showLogo,
   onLogoToggle,
   showHeading,
@@ -127,6 +132,21 @@ export default function BannerControls({
               </button>
             )}
           </div>
+        )}
+      </Section>
+
+      {/* Subheading — toggle + text input (activates compact heading mode) */}
+      <Section title="Subheading">
+        <TogglePill checked={showSubheading} onToggle={onSubheadingToggle} />
+        {showSubheading && (
+          <input
+            type="text"
+            value={subheadingText}
+            onChange={(e) => onSubheadingTextChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+            className="input-base mt-2"
+            placeholder="Enter subheading..."
+          />
         )}
       </Section>
 
@@ -222,20 +242,9 @@ export default function BannerControls({
         )}
       </Section>
 
-      {/* Price Display / Subheading Text */}
+      {/* Price Display */}
       <Section title="Price">
         <TogglePill checked={showPrice} onToggle={onPriceToggle} />
-        {/* When price is off, show a subheading text input instead */}
-        {!showPrice && (
-          <input
-            type="text"
-            value={subheadingText}
-            onChange={(e) => onSubheadingTextChange(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-            className="input-base mt-2"
-            placeholder="Enter subheading..."
-          />
-        )}
         {showPrice && (
           <div className="mt-2 space-y-2">
             <div>

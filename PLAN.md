@@ -1169,3 +1169,226 @@ Each component is refactored independently. No prop-type or interface changes.
 - `src/components/ExportPanel/ExportPanel.tsx` — unchanged
 - `src/components/LogsPanel/LogsPanel.tsx` — unchanged
 - `src/components/BackgroundGallery/BackgroundGallery.tsx` — unchanged
+
+---
+
+## Separate Subheading from Price — Independent Subheading Element + Compact Heading Mode
+
+**Overall Progress:** `100%`
+
+**Context:** The current "subheading" slot conflates two concepts: the price display and a fallback custom text. This plan separates them into two independent elements — a true **Subheading** (new) and a renamed **Price** (current "subheading"). When Subheading is toggled ON, the heading enters compact mode (28px, Inter 600, single line) and spacing tightens. All elements remain independently toggleable and dynamically centered.
+
+### Critical Decisions
+
+- **Rename `'subheading'` → `'price'` in ElementId** — the current layout slot that shows prices gets its correct name
+- **New `'subheading'` ElementId** — inserted between heading and price in the layout stack
+- **`subheadingText` state repurposed** — previously shown "when price is off"; now shown "when showSubheading is on" (independent of price toggle)
+- **Heading has two modes:**
+  - **Normal** (showSubheading OFF): adaptive 32→22px, weight 800, max 2 lines (existing behavior)
+  - **Compact** (showSubheading ON): fixed 28px, weight 600, max 1 line, truncate with `...`
+- **MRP font size updated** from 24px to 28px per new visual spec
+- **New `showSubheading` toggle** (default `false`) — independent of price toggle, both can be ON simultaneously
+
+### Layout Stack Reference
+
+**Subheading OFF (current behavior, no change):**
+```
+Logo
+  ↕ 10px
+Heading (adaptive 32→22px, Inter 800, max 2 lines)
+  ↕ 15px
+Price (₹MRP 28px/500 strikethrough + ₹selling 36px/700)
+  ↕ 15px
+CTA
+  ↕ 3px
+T&C
+```
+
+**Subheading ON:**
+```
+Logo
+  ↕ 10px
+Heading (28px Inter 600, 1 line — COMPACT MODE)
+  ↕ 10px
+Subheading (24px Inter 400)
+  ↕ 10px
+Price (₹MRP 28px/500 strikethrough + ₹selling 36px/700)
+  ↕ 15px
+CTA
+  ↕ 3px
+T&C
+```
+
+### Gap Table (updated)
+
+```
+'logo-heading':       10   (unchanged)
+'heading-subheading': 10   (new — compact heading to subheading)
+'heading-price':      15   (renamed from old 'heading-subheading')
+'subheading-price':   10   (new — subheading to price)
+'subheading-cta':     10   (new — subheading to CTA when price is off)
+'price-cta':          15   (renamed from old 'subheading-cta')
+'cta-tnc':             3   (unchanged)
+```
+
+### Tasks
+
+- [x] 🟩 **Step N1: Update bannerTemplate.ts — constants & gap table** ✅ DONE
+  - [x] 🟩 Update `SUBHEADING_TEXT` styling to new values: `fontSize: 24, fontWeight: 400` (was 28/700)
+  - [x] 🟩 Update `PRICE_DISPLAY.mrp.fontSize` from `24` → `28`
+  - [x] 🟩 Add `HEADING_COMPACT` constant: `{ fontSize: 28, fontWeight: 600, lineHeight: 1.2, maxLines: 1 }`
+  - [x] 🟩 Replace `LEFT_SECTION_GAPS` with updated gap table (see above)
+  - [x] 🟩 Update `SUBHEADING_TEXT_HEIGHT` — now `24` (tracks new `SUBHEADING_TEXT.fontSize`)
+  - [x] 🟩 `PRICE_HEIGHT` unchanged (still `sellingPrice.fontSize` = 36)
+
+- [x] 🟩 **Step N2: Update types/index.ts** ✅ DONE
+  - [x] 🟩 Add `showSubheading: boolean` to `BannerState`
+
+- [x] 🟩 **Step N3: Update useBannerState.tsx** ✅ DONE
+  - [x] 🟩 Add `showSubheading` state (default `false`)
+  - [x] 🟩 Add `toggleSubheading` callback
+  - [x] 🟩 Expose both in `BannerContextType` and context value
+
+- [x] 🟩 **Step N4: Update BannerPreview.tsx — layout engine + rendering** ✅ DONE
+  - [x] 🟩 Update `ElementId` type: `'logo' | 'heading' | 'subheading' | 'price' | 'cta' | 'tnc'`
+  - [x] 🟩 Update `getGapBetween()` ordered list to `['logo', 'heading', 'subheading', 'price', 'cta', 'tnc']`
+  - [x] 🟩 **Conditional heading config:** when `showSubheading` is true, use `HEADING_COMPACT` values in the adaptive sizing `useEffect` (fixed 28px, weight 600, maxLines 1); otherwise existing normal config
+  - [x] 🟩 Destructure `showSubheading` from `state`
+  - [x] 🟩 Update `visibleElements`:
+    - Add `{ id: 'subheading', height: SUBHEADING_TEXT_HEIGHT }` when `showSubheading && subheadingText`
+    - Rename old subheading entry to `{ id: 'price', height: PRICE_HEIGHT }` when `showPrice && displayPrice`
+  - [x] 🟩 Update position references: `positions.subheading` for new subheading, `positions.price` for price display
+  - [x] 🟩 Add render block for new subheading element (24px Inter 400, `SUBHEADING.x`, `positions.subheading`)
+  - [x] 🟩 Update price render to use `positions.price` (was `positions.subheading`)
+  - [x] 🟩 **Remove** old "subheading text when price off" render block — subheading text is now its own independent element
+
+- [x] 🟩 **Step N5: Update BannerControls.tsx** ✅ DONE
+  - [x] 🟩 Add new "Subheading" section (between Product Name and Background):
+    - `TogglePill` for `showSubheading`
+    - Text input for `subheadingText` when `showSubheading` is ON
+    - Block Enter key (single-line only)
+  - [x] 🟩 **Remove** subheading text input from Price section (was shown when `!showPrice` — that behavior is replaced by the new independent Subheading section)
+  - [x] 🟩 Add new props: `showSubheading: boolean`, `onSubheadingToggle: () => void`
+
+- [x] 🟩 **Step N6: Wire through App.tsx** ✅ DONE
+  - [x] 🟩 Destructure `showSubheading` and `toggleSubheading` from `useBannerState()`
+  - [x] 🟩 Add `showSubheading` to `bannerState` useMemo
+  - [x] 🟩 Pass `showSubheading` and `onSubheadingToggle={toggleSubheading}` to `<BannerControls>`
+
+- [x] 🟩 **Step N7: Build & verify** ✅ DONE
+  - [x] 🟩 `npm run build` — type-check passes
+  - [x] 🟩 `npm run test:run` — all 49 tests pass
+  - [ ] ⬜ Manual: Subheading OFF → layout identical to before (no regressions)
+  - [ ] ⬜ Manual: Subheading ON → heading shrinks to 28px/600/1-line, subheading appears below it
+  - [ ] ⬜ Manual: Subheading ON + Price ON → both visible with 10px gaps
+  - [ ] ⬜ Manual: Subheading ON + Price OFF → subheading visible, no price
+  - [ ] ⬜ Manual: Toggle each element off → layout reflows correctly
+  - [ ] ⬜ Manual: Export banner with subheading → renders correctly
+
+### Visibility Combinations
+
+| Subheading | Price | Heading Mode | Layout |
+|---|---|---|---|
+| OFF | ON | Normal (adaptive 32→22px, 800, 2 lines) | Logo → Heading → Price → CTA → T&C |
+| OFF | OFF | Normal | Logo → Heading → CTA → T&C |
+| ON | ON | Compact (28px, 600, 1 line) | Logo → Heading → Subheading → Price → CTA → T&C |
+| ON | OFF | Compact (28px, 600, 1 line) | Logo → Heading → Subheading → CTA → T&C |
+
+### Edge Cases
+
+| Scenario | Behavior |
+|---|---|
+| Subheading ON, text empty | Subheading element not in layout (no blank space) |
+| Subheading ON, heading too long for 1 line at 28px | Truncated with `...` (single line enforced) |
+| Subheading ON, all other elements OFF | Only subheading visible, centered vertically |
+| Toggle subheading OFF then ON | Text preserved (not cleared on toggle) |
+| Switch product while subheading ON | `subheadingText` reset to `''` (existing behavior), heading mode stays compact |
+| Both subheading and price OFF | Neither appears in layout; heading stays compact if subheading toggle is ON |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `src/constants/bannerTemplate.ts` | Update `SUBHEADING_TEXT` (24/400), update `PRICE_DISPLAY.mrp.fontSize` (28), add `HEADING_COMPACT`, update gap table |
+| `src/types/index.ts` | Add `showSubheading: boolean` to `BannerState` |
+| `src/hooks/useBannerState.tsx` | Add `showSubheading` state + `toggleSubheading` |
+| `src/components/BannerPreview/BannerPreview.tsx` | New `'subheading'` + `'price'` ElementIds, conditional heading mode, new subheading render, price uses `positions.price` |
+| `src/components/BannerControls/BannerControls.tsx` | New Subheading section with toggle + input, remove old subheading-text-when-price-off |
+| `src/App.tsx` | Wire `showSubheading` and `toggleSubheading` |
+
+### Files NOT Modified
+
+- `src/services/exportService.ts` — renders BannerPreview DOM as-is
+- `src/services/catalogueParser.ts` — catalogue data unchanged
+- `src/services/searchService.ts` — search unchanged
+- `src/services/removeBackgroundService.ts` — unchanged
+- `src/constants/backgrounds.ts` — unchanged
+- `src/components/ImageUploadZone/ImageUploadZone.tsx` — unchanged
+- `src/components/ProductSearch/ProductSearch.tsx` — unchanged
+- `src/components/ExportPanel/ExportPanel.tsx` — unchanged
+- `src/components/LogsPanel/LogsPanel.tsx` — unchanged
+- `src/components/BackgroundGallery/BackgroundGallery.tsx` — unchanged
+- All test files — no new tests needed (build + existing tests cover regressions)
+
+---
+
+## Fix Element Height Mismatches — Explicit Heights for Pixel-Perfect Spacing
+
+**Overall Progress:** `0%`
+
+**Context:** The dynamic layout engine in `BannerPreview.tsx` computes vertical positions by summing estimated element heights + gap values from `LEFT_SECTION_GAPS`. However, the rendered DOM elements don't enforce those exact heights — most lack explicit `height` and `lineHeight` styles. When the browser renders text with its default `lineHeight` (~1.2), elements become taller than the layout engine assumed, causing visible gaps to differ from the defined gap values.
+
+**Root cause:** The layout engine assumes `SUBHEADING_TEXT_HEIGHT = 24` (fontSize only), but the browser renders the subheading at ~29px (fontSize x default lineHeight 1.2). This 5px discrepancy cascades to every gap below the subheading. Similar (smaller) mismatches exist on other text elements.
+
+**Fix principle:** Every rendered element's actual DOM height must exactly match the height constant the layout engine uses. We achieve this by:
+1. Adding explicit `lineHeight` to constants that lack it, so the height formula is deterministic
+2. Setting explicit `height` + `overflow: hidden` on every rendered element in `BannerPreview.tsx`
+
+### Mismatch Analysis
+
+| Element | Layout Height Constant | Current Rendered lineHeight | Actual vs Expected | Fix |
+|---|---|---|---|---|
+| Logo | `BRAND_LOGO.height` (40) | N/A (img) | 40 = 40 | Already has explicit `height` |
+| Heading | `headingHeight` (DOM measured) | `headingConfig.lineHeight` (1.2) | ~matched | Add explicit `height: headingHeight` |
+| Subheading | `SUBHEADING_TEXT_HEIGHT` (24) | **None** -> browser ~1.2 | **~29 != 24** | Add `lineHeight: 1` to constant + explicit `height` |
+| Price | `PRICE_HEIGHT` (32) | 1 (on spans) | ~32 | Add explicit `height` on flex container |
+| CTA | `CTA_HEIGHT` (38) | 1.1 | 38 = 38 | Add `height` + `boxSizing: 'border-box'` for safety |
+| T&C | `TNC_HEIGHT` (12) | **None** -> browser ~1.2 | ~12 | Add `lineHeight: 1.2` to constant + explicit `height` |
+
+### Tasks
+
+- [ ] **Step H1: Add lineHeight to text constants in bannerTemplate.ts**
+  - [ ] Add `lineHeight: 1` to `SUBHEADING_TEXT` — ensures height = fontSize x 1 = 24 = `SUBHEADING_TEXT_HEIGHT`
+  - [ ] Add `lineHeight: 1.2` to `TNC_TEXT` — ensures height = fontSize x 1.2 = 12 = `TNC_HEIGHT`
+  - [ ] Add `lineHeight: 1` to `PRICE_DISPLAY.mrp` and `PRICE_DISPLAY.sellingPrice` — codifies the lineHeight already used in JSX
+  - [ ] No formula changes needed — height constants all still compute correctly
+
+- [ ] **Step H2: Apply explicit heights + lineHeights on rendered elements in BannerPreview.tsx**
+  - [ ] **Heading**: Add `height: headingHeight` to the heading div style (already has `overflow: 'hidden'`)
+  - [ ] **Subheading**: Add `lineHeight: SUBHEADING_TEXT.lineHeight`, `height: SUBHEADING_TEXT_HEIGHT`, `overflow: 'hidden'`
+  - [ ] **Price**: Add `height: PRICE_HEIGHT`, `overflow: 'hidden'` on flex container; use `lineHeight` from constants on both spans
+  - [ ] **CTA**: Add `height: CTA_HEIGHT`, `boxSizing: 'border-box' as const` (CTA_HEIGHT includes padding)
+  - [ ] **T&C**: Add `lineHeight: TNC_TEXT.lineHeight`, `height: TNC_HEIGHT`, `overflow: 'hidden'`
+
+- [ ] **Step H3: Build & verify**
+  - [ ] `npm run build` — type-check passes
+  - [ ] `npm run test:run` — all 49 tests pass
+  - [ ] Manual: Visual gaps now match `LEFT_SECTION_GAPS` values exactly
+  - [ ] Manual: All toggle combinations still work correctly
+  - [ ] Manual: Long text truncates properly (doesn't overflow explicit heights)
+  - [ ] Manual: Export renders correctly
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `src/constants/bannerTemplate.ts` | Add `lineHeight` to `SUBHEADING_TEXT` (1), `TNC_TEXT` (1.2), `PRICE_DISPLAY.mrp` (1), `PRICE_DISPLAY.sellingPrice` (1) |
+| `src/components/BannerPreview/BannerPreview.tsx` | Add explicit `height` + `overflow: hidden` to heading, subheading, price, CTA, T&C render blocks; use `lineHeight` from constants |
+
+### Files NOT Modified
+
+- `src/types/index.ts` — no type changes
+- `src/hooks/useBannerState.tsx` — no state changes
+- `src/components/BannerControls/BannerControls.tsx` — no control changes
+- `src/App.tsx` — no wiring changes
+- All service and test files — unchanged

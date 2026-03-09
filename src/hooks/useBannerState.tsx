@@ -19,6 +19,7 @@ interface BannerContextType extends BannerState {
   toggleLogo: () => void;
   toggleHeading: () => void;
   toggleCta: () => void;
+  toggleSubheading: () => void;
   setProductImageOverride: (url: string | null) => void;
 }
 
@@ -40,6 +41,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [showLogo, setShowLogo] = useState(true);
   const [showHeading, setShowHeading] = useState(true);
   const [showCta, setShowCta] = useState(true);
+  const [showSubheading, setShowSubheading] = useState(false);
   const [productImageOverride, setProductImageOverride] = useState<string | null>(null);
 
   const toggleTnc = useCallback(() => setShowTnc(prev => !prev), []);
@@ -48,6 +50,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const toggleLogo = useCallback(() => setShowLogo(prev => !prev), []);
   const toggleHeading = useCallback(() => setShowHeading(prev => !prev), []);
   const toggleCta = useCallback(() => setShowCta(prev => !prev), []);
+  const toggleSubheading = useCallback(() => setShowSubheading(prev => !prev), []);
 
   // Reset all per-product overrides when switching products.
   // Prevents stale blob URLs and cross-product state bleed.
@@ -72,6 +75,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showLogo,
     showHeading,
     showCta,
+    showSubheading,
     subheadingText,
     tncText,
     brandLogoOverride,
@@ -96,6 +100,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     toggleLogo,
     toggleHeading,
     toggleCta,
+    toggleSubheading,
     setProductImageOverride,
   };
 

@@ -65,7 +65,9 @@ export interface BannerState {
   showHeading: boolean;
   /** Toggle visibility of the CTA button on the banner */
   showCta: boolean;
-  /** Custom text rendered in the subheading area when price is toggled off */
+  /** Toggle visibility of the subheading element (activates compact heading mode) */
+  showSubheading: boolean;
+  /** Custom text for the subheading element (shown when showSubheading is ON) */
   subheadingText: string;
   tncText: string;
   brandLogoOverride: string | null;

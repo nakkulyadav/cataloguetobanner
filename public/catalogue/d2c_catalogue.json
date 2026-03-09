@@ -1,0 +1,309 @@
+{
+  "attribute_key_values": [
+    {
+      "key": "colour",
+      "value": "NA"
+    },
+    {
+      "key": "size",
+      "value": "NA"
+    },
+    {
+      "key": "brand",
+      "value": "DARK ROMANCE"
+    },
+    {
+      "key": "gender",
+      "value": "NA"
+    },
+    {
+      "key": "Colour Name",
+      "value": "#FFFFFF"
+    }
+  ],
+  "bpp_details": {
+    "bpp_id": "ondc.snapdeal.com",
+    "images": [
+      "https://storage.googleapis.com/ens-ondc/1746438074048_msme.jpg"
+    ],
+    "long_desc": "Snapdeal",
+    "name": "Snapdeal",
+    "short_desc": "Snapdeal",
+    "symbol": "https://storage.googleapis.com/ens-ondc/1746438074048_msme.jpg",
+    "tags": [
+      {
+        "code": "bpp_terms",
+        "list": [
+          {
+            "code": "np_type",
+            "value": "MSN"
+          }
+        ]
+      }
+    ]
+  },
+  "context": {
+    "action": "on_search",
+    "bap_id": "prod.nirmitbap.ondc.org",
+    "bap_uri": "https://prod.digihaat.in/protocol/v1",
+    "bpp_id": "ondc.snapdeal.com",
+    "bpp_uri": "https://ondc.snapdeal.com/ondc/v1/268238/bpp",
+    "city": "std:0120",
+    "core_version": "1.2.0",
+    "country": "IND",
+    "domain": "ONDC:RET12",
+    "message_id": "7403a7e5-51ec-41e0-a88b-084e0312370f",
+    "timestamp": "2026-03-08T20:10:44.314Z",
+    "transaction_id": "f712d96e-1888-4f8b-a153-caebb930011e",
+    "ttl": "PT30S"
+  },
+  "created_at": "2026-03-08T20:26:41.502523",
+  "customisation_groups": [],
+  "customisation_menus": [],
+  "food_type": "n/a",
+  "fulfillment": [
+    {
+      "contact": {
+        "email": "help@snapdeal.com",
+        "phone": "9212692126"
+      },
+      "id": "1",
+      "type": "Delivery"
+    }
+  ],
+  "fulfillment_details": {
+    "id": "1",
+    "type": "Delivery"
+  },
+  "id": "ondc.snapdeal.com_ONDC:RET12_Sc5f10_SDL939316174_Sc5f10",
+  "in_stock": true,
+  "is_first": true,
+  "item_cur_flags": [],
+  "item_details": {
+    "@ondc/org/available_on_cod": false,
+    "@ondc/org/cancellable": true,
+    "@ondc/org/contact_details_consumer_care": "AMIT KUMAR OJHA,help@snapdeal.com,9212692126",
+    "@ondc/org/return_window": "P7D",
+    "@ondc/org/returnable": true,
+    "@ondc/org/seller_pickup_return": false,
+    "@ondc/org/time_to_ship": "P1D",
+    "category_id": "Handbags",
+    "descriptor": {
+      "code": "5:SDL939316174_Sc5f10",
+      "images": [
+        "https://g.sdlcdn.com/imgs/j/m/7/DARK-ROMANCE-Faux-Leather-Brown-SDL939316174-1-4aa96.jpeg?trim=10&w=850&h=995&sharp=7",
+        "https://g.sdlcdn.com/imgs/j/m/7/DARK-ROMANCE-Faux-Leather-Brown-SDL939316174-2-ec746.jpeg?trim=10&w=850&h=995&sharp=7",
+        "https://g.sdlcdn.com/imgs/j/m/7/DARK-ROMANCE-Faux-Leather-Brown-SDL939316174-3-ee47d.jpeg?trim=10&w=850&h=995&sharp=7",
+        "https://g.sdlcdn.com/imgs/j/m/7/DARK-ROMANCE-Faux-Leather-Brown-SDL939316174-4-9c2de.jpeg?trim=10&w=850&h=995&sharp=7",
+        "https://g.sdlcdn.com/imgs/j/m/7/DARK-ROMANCE-Faux-Leather-Brown-SDL939316174-5-75325.jpeg?trim=10&w=850&h=995&sharp=7"
+      ],
+      "long_desc": "DARK ROMANCE Faux Leather Brown Formal Regular Wallet",
+      "name": "DARK ROMANCE Faux Leather Brown Formal Regular Wallet",
+      "short_desc": "DARK ROMANCE Faux Leather Brown Formal Regular Wallet",
+      "symbol": "https://g.sdlcdn.com/imgs/j/m/7/DARK-ROMANCE-Faux-Leather-Brown-SDL939316174-1-4aa96.jpeg?trim=10&w=850&h=995&sharp=7"
+    },
+    "fulfillment_id": "1",
+    "id": "SDL939316174_Sc5f10",
+    "location_id": "Sc5f10",
+    "parent_item_id": "348094",
+    "price": {
+      "currency": "INR",
+      "discount": 519,
+      "discount_percentage": 64.95619524405507,
+      "maximum_value": "799",
+      "value": 280,
+      "with_customisation_value": 280
+    },
+    "quantity": {
+      "available": {
+        "count": "99"
+      },
+      "maximum": {
+        "count": "99"
+      },
+      "unitized": {
+        "measure": {
+          "unit": "unit",
+          "value": "1"
+        }
+      }
+    },
+    "tags": [
+      {
+        "code": "origin",
+        "list": [
+          {
+            "code": "country",
+            "value": "IND"
+          }
+        ]
+      },
+      {
+        "code": "attribute",
+        "list": [
+          {
+            "code": "colour",
+            "value": "na"
+          },
+          {
+            "code": "size",
+            "value": "na"
+          },
+          {
+            "code": "brand",
+            "value": "DARK ROMANCE"
+          },
+          {
+            "code": "gender",
+            "value": "NA"
+          },
+          {
+            "code": "colour_name",
+            "value": "#FFFFFF"
+          }
+        ]
+      }
+    ],
+    "time": {
+      "label": "enable",
+      "timestamp": "2026-03-08T20:10:44.314Z"
+    }
+  },
+  "language": "en",
+  "local_id": "SDL939316174_Sc5f10",
+  "location_availabilities": {
+    "0": [
+      {
+        "end": 0,
+        "start": 0
+      }
+    ],
+    "1": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ],
+    "2": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ],
+    "3": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ],
+    "4": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ],
+    "5": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ],
+    "6": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ],
+    "7": [
+      {
+        "end": 2359,
+        "start": 0
+      }
+    ]
+  },
+  "location_details": {
+    "address": {
+      "area_code": "203207",
+      "city": "Dadri",
+      "locality": "HOUSE NO-11B KHASRA NO860  SAHARA ENCLEVEKHERA DHARMPURA  CHHAPRAULA",
+      "state": "UP",
+      "street": "HOUSE NO-11B KHASRA NO860  SAHARA ENCLEVEKHERA DHARMPURA  CHHAPRAULA"
+    },
+    "average_time_to_ship": 86400,
+    "circle": {
+      "gps": "28.6122,77.4776",
+      "radius": {
+        "unit": "km",
+        "value": "3000"
+      }
+    },
+    "enable_count": 1,
+    "enable_percentage": 1,
+    "gps": "28.6122,77.4776",
+    "id": "ondc.snapdeal.com_ONDC:RET12_Sc5f10_Sc5f10",
+    "in_stock_count": 1,
+    "local_id": "Sc5f10",
+    "max_time_to_ship": 86400,
+    "median_time_to_ship": 86400,
+    "min_time_to_ship": 86400,
+    "time": {
+      "days": "1,2,3,4,5,6,7",
+      "label": "enable",
+      "range": {
+        "end": "2359",
+        "start": "0000"
+      },
+      "schedule": {
+        "holidays": []
+      },
+      "timestamp": "2026-03-08T20:10:44.314Z"
+    },
+    "total_count": 1,
+    "type": "pan"
+  },
+  "on_search_doc_id": "69add7c47d8a0aa7bbde0d1b",
+  "provider_cur_flags": [],
+  "provider_details": {
+    "descriptor": {
+      "images": [
+        "https://g.sdlcdn.com/imgs/a/b/c/sdtv/46564544.png"
+      ],
+      "long_desc": "AMIT KUMAR OJHA",
+      "name": "AMIT KUMAR OJHA",
+      "short_desc": "AMIT KUMAR OJHA",
+      "symbol": "https://g.sdlcdn.com/imgs/a/b/c/sdtv/46564544.png"
+    },
+    "id": "ondc.snapdeal.com_ONDC:RET12_Sc5f10",
+    "local_id": "Sc5f10",
+    "time": {
+      "label": "enable",
+      "timestamp": "2026-03-08T20:10:44.314Z"
+    },
+    "ttl": "P1D"
+  },
+  "provider_id": "ondc.snapdeal.com_ONDC:RET12_Sc5f10",
+  "provider_search_tags": null,
+  "request_type": "full",
+  "restaurant_tags": [],
+  "routing_key": "en_ONDC:RET12_0",
+  "seller_cur_flags": [
+    {
+      "code": "92005",
+      "message": "NP is manually blacklisted",
+      "path": "context.bpp_id",
+      "type": "BPP-ERROR"
+    }
+  ],
+  "type": "item",
+  "variant_group": {
+    "attribute_codes": [
+      "colour",
+      "size",
+      "colour",
+      "size"
+    ],
+    "id": "ondc.snapdeal.com_ONDC:RET12_Sc5f10_348094",
+    "local_id": "348094"
+  },
+  "visible": false
+}

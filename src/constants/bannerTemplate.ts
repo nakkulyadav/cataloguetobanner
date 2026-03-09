@@ -2,7 +2,7 @@
  * Banner layout constants for the 722×312px canvas.
  *
  * The canvas is split 50/50 at x=361:
- *   Left half  → logo, heading, subheading/price, CTA, T&C
+ *   Left half  → logo, heading, subheading, price, CTA, T&C
  *                (vertically centered via dynamic layout in BannerPreview)
  *   Right half → product image, offer badge
  *
@@ -19,18 +19,23 @@ export const BANNER_FALLBACK_BG = '#FFFFFF';
 // --- Left-half margin: all left-section elements share a 40px left offset ---
 const LEFT_MARGIN = 40;
 
+// --- Left-section vertical bounds ---
+// Content is centered within [TOP_PADDING, BANNER_HEIGHT - BOTTOM_PADDING].
+export const LEFT_SECTION_TOP_PADDING = 20;
+export const LEFT_SECTION_BOTTOM_PADDING = 20;
+
 // --- Brand Logo ---
 export const BRAND_LOGO = {
   x: LEFT_MARGIN,
-  width: 320,
+  width: 370,
   /** Fixed height — objectFit:contain scales logos up/down to fit this box */
-  height: 40,
+  height: 50,
 };
 
 // --- Product Name / Heading ---
 export const PRODUCT_NAME = {
   x: LEFT_MARGIN,
-  maxWidth: 320,
+  maxWidth: 370,
   fontFamily: '"Inter", sans-serif',
   fontWeight: 800,
   color: '#000000',
@@ -41,21 +46,32 @@ export const PRODUCT_NAME = {
   fontSizeStep: 1,
 };
 
-// --- Subheading Reserved Area ---
-export const SUBHEADING = {
-  x: LEFT_MARGIN,
-  maxWidth: 320,
+// --- Heading Compact Mode (active when subheading is toggled ON) ---
+// Fixed single-line heading: smaller font, lighter weight, no adaptive sizing.
+export const HEADING_COMPACT = {
+  fontWeight: 600,
+  lineHeight: 1.2,
+  maxLines: 1,
+  maxFontSize: 28,
+  minFontSize: 24,
+  fontSizeStep: 1,
 };
 
-// --- Subheading Custom Text (shown in subheading area when price is toggled off) ---
+// --- Subheading Position ---
+export const SUBHEADING = {
+  x: LEFT_MARGIN,
+  maxWidth: 370,
+};
+
+// --- Subheading Text (independent element between heading and price) ---
 export const SUBHEADING_TEXT = {
-  fontSize: 28,
-  fontWeight: 700,
+  fontSize: 24,
+  fontWeight: 400,
   color: '#000000',
   fontFamily: '"Inter", sans-serif',
 };
 
-// --- Price Display (within the subheading slot) ---
+// --- Price Display (independent element below subheading) ---
 export const PRICE_DISPLAY = {
   x: LEFT_MARGIN,
   /** Horizontal gap between MRP and selling price */
@@ -68,7 +84,7 @@ export const PRICE_DISPLAY = {
     textDecoration: 'line-through' as const,
   },
   sellingPrice: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: 700,
     color: '#000000',
     fontFamily: '"Inter", sans-serif',
@@ -92,10 +108,10 @@ export const CTA_BUTTON = {
 // --- T&C Text ---
 export const TNC_TEXT = {
   x: LEFT_MARGIN,
-  fontSize: 10,
+  fontSize: 14,
   fontWeight: 500,
   color: '#000000',
-  maxWidth: 320,
+  maxWidth: 370,
 };
 
 // --- Offer Badge (top-right, flush with canvas edges) ---
@@ -112,11 +128,15 @@ export const OFFER_BADGE = {
 
 // --- Dynamic left-section layout ---
 // Preset gaps between adjacent visible elements (px).
-// When an element is hidden, its neighbors collapse using the gap of the earlier element.
+// When an element is hidden, its neighbors collapse using the fallback lookup
+// in getGapBetween() which walks the ordered element list.
 export const LEFT_SECTION_GAPS: Record<string, number> = {
   'logo-heading': 10,
-  'heading-subheading': 15,
-  'subheading-cta': 15,
+  'heading-subheading': 5,  // compact heading → subheading
+  'heading-price': 10,       // normal heading → price (subheading off)
+  'subheading-price': 20,    // subheading → price
+  'subheading-cta': 15,      // subheading → CTA (when price is off)
+  'price-cta': 15,           // price → CTA
   'cta-tnc': 3,
 };
 
@@ -135,8 +155,8 @@ export const TNC_HEIGHT = TNC_TEXT.fontSize * 1.2;
 // --- Product Image (right half, bottom-aligned) ---
 export const PRODUCT_IMAGE = {
   /** Horizontal centre of the right half: (361 + 722) / 2 */
-  centerX: 541.5,
+  centerX: 550,
   width: 300,
-  height: 275,
-  bottomOffset: 2,
+  height: 270,
+  bottomOffset: 3,
 };

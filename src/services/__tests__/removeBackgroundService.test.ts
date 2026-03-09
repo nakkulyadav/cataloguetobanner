@@ -39,12 +39,12 @@ describe('removeBackgroundService', () => {
     vi.unstubAllGlobals()
   })
 
-  it('sends correct request and returns a blob URL on success', async () => {
+  it('sends image_url for public URLs and returns a blob URL', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockOkResponse())
 
     const result = await removeBackground(FAKE_IMAGE_URL)
 
-    // Verify the API was called correctly
+    // Only the API call — no local fetch needed for public URLs
     expect(fetchSpy).toHaveBeenCalledOnce()
     const callArgs = fetchSpy.mock.calls[0]!
     const url = callArgs[0]
@@ -53,14 +53,62 @@ describe('removeBackgroundService', () => {
     expect(options?.method).toBe('POST')
     expect((options?.headers as Record<string, string>)['X-Api-Key']).toBe(FAKE_API_KEY)
 
-    // Verify FormData contains image_url and size
+    // Verify FormData contains image_url (not image_file) and size
     const body = options?.body as FormData
     expect(body.get('image_url')).toBe(FAKE_IMAGE_URL)
+    expect(body.has('image_file')).toBe(false)
     expect(body.get('size')).toBe('auto')
 
-    // Verify it returns a blob URL
     expect(result).toBe(FAKE_BLOB_URL)
     expect(URL.createObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('sends image_file for blob URLs (uploaded/pasted images)', async () => {
+    const localBlob = new Blob(['fake-image'], { type: 'image/png' })
+    const localBlobResponse = new Response(localBlob)
+    const apiBlobResponse = mockOkResponse()
+
+    // First call = local blob fetch, second call = API request
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(localBlobResponse)
+      .mockResolvedValueOnce(apiBlobResponse)
+
+    const blobUrl = 'blob:http://localhost:5173/some-uuid'
+    const result = await removeBackground(blobUrl)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+    // First call: fetch the local blob
+    expect(fetchSpy.mock.calls[0]![0]).toBe(blobUrl)
+
+    // Second call: API request with image_file
+    const apiCallOptions = fetchSpy.mock.calls[1]![1]
+    const body = apiCallOptions?.body as FormData
+    expect(body.has('image_file')).toBe(true)
+    expect(body.has('image_url')).toBe(false)
+    expect(body.get('size')).toBe('auto')
+
+    expect(result).toBe(FAKE_BLOB_URL)
+  })
+
+  it('sends image_file for data URIs', async () => {
+    const localBlob = new Blob(['fake-image'], { type: 'image/png' })
+    const localBlobResponse = new Response(localBlob)
+    const apiBlobResponse = mockOkResponse()
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(localBlobResponse)
+      .mockResolvedValueOnce(apiBlobResponse)
+
+    const dataUri = 'data:image/png;base64,iVBORw0KGgo='
+    await removeBackground(dataUri)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(fetchSpy.mock.calls[0]![0]).toBe(dataUri)
+
+    const body = fetchSpy.mock.calls[1]![1]?.body as FormData
+    expect(body.has('image_file')).toBe(true)
+    expect(body.has('image_url')).toBe(false)
   })
 
   it('throws with status info when API responds with error', async () => {

@@ -26,9 +26,21 @@ function getApiKey(): string {
 }
 
 /**
+ * Returns true when the URL is a local blob or data URI that
+ * remove.bg's servers cannot fetch remotely.
+ */
+function isLocalUrl(url: string): boolean {
+  return url.startsWith('blob:') || url.startsWith('data:');
+}
+
+/**
  * Removes the background from an image via the remove.bg API.
  *
- * @param imageUrl — Public URL of the image to process.
+ * Automatically detects local images (blob/data URIs from uploads or
+ * clipboard pastes) and sends them as `image_file` instead of
+ * `image_url`, which only works for publicly-accessible URLs.
+ *
+ * @param imageUrl — URL of the image to process (public URL, blob URL, or data URI).
  * @returns A same-origin blob URL (`blob:...`) pointing to the
  *          transparent PNG. Caller is responsible for revoking
  *          the blob URL via `URL.revokeObjectURL()` when done.
@@ -38,10 +50,18 @@ function getApiKey(): string {
 export async function removeBackground(imageUrl: string): Promise<string> {
   const apiKey = getApiKey();
 
-  // Build multipart form — remove.bg accepts image_url for remote images
   const formData = new FormData();
-  formData.append('image_url', imageUrl);
   formData.append('size', 'auto');
+
+  if (isLocalUrl(imageUrl)) {
+    // Local blob/data URI — fetch the binary locally and send as file upload
+    const localResponse = await fetch(imageUrl);
+    const imageBlob = await localResponse.blob();
+    formData.append('image_file', imageBlob, 'image.png');
+  } else {
+    // Public URL — let remove.bg fetch it directly
+    formData.append('image_url', imageUrl);
+  }
 
   const response = await fetch(REMOVEBG_ENDPOINT, {
     method: 'POST',

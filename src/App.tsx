@@ -37,6 +37,7 @@ function App() {
     showLogo,
     showHeading,
     showCta,
+    showSubheading,
     subheadingText,
     productImageOverride,
     selectProduct,
@@ -49,6 +50,7 @@ function App() {
     toggleLogo,
     toggleHeading,
     toggleCta,
+    toggleSubheading,
     setTncText,
     setProductNameOverride,
     setBrandLogoOverride,
@@ -188,6 +190,7 @@ function App() {
       showLogo,
       showHeading,
       showCta,
+      showSubheading,
       subheadingText,
       tncText,
       brandLogoOverride: effectiveBrandLogo,
@@ -206,6 +209,7 @@ function App() {
     showLogo,
     showHeading,
     showCta,
+    showSubheading,
     subheadingText,
     tncText,
     brandLogoOverride,
@@ -369,6 +373,8 @@ function App() {
             onPriceOverrideChange={setPriceOverride}
             subheadingText={subheadingText}
             onSubheadingTextChange={setSubheadingText}
+            showSubheading={showSubheading}
+            onSubheadingToggle={toggleSubheading}
             showLogo={showLogo}
             onLogoToggle={toggleLogo}
             showHeading={showHeading}
