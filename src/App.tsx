@@ -90,10 +90,10 @@ function App() {
     await directLookup.lookupProvider(providerId)
   }, [directLookup, selectProduct])
 
-  const handleDirectLookupItem = useCallback(async (itemId: string) => {
+  const handleDirectLookupUrl = useCallback(async (url: string) => {
     // Clear browse-mode selection
     setSelectedProvider(null)
-    await directLookup.lookupItem(itemId)
+    await directLookup.lookupByUrl(url)
   }, [directLookup])
 
   const handleDirectLookupClear = useCallback(() => {
@@ -364,7 +364,7 @@ function App() {
           isLoading={directLookup.isLoading}
           error={directLookup.error}
           onLookupProvider={handleDirectLookupProvider}
-          onLookupItem={handleDirectLookupItem}
+          onLookupByUrl={handleDirectLookupUrl}
           onClear={handleDirectLookupClear}
         />
 

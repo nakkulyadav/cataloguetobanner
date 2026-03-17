@@ -6,8 +6,6 @@ export interface SearchCatalogParams {
   domain?: string
   search?: string
   providerUniqueId?: string
-  /** Fetch a single item by its item_id */
-  itemId?: string
   page?: number
   pageSize?: number
 }
@@ -32,7 +30,6 @@ export async function searchCatalog(
   if (params.domain) qp.set('domain', params.domain)
   if (params.search) qp.set('search', params.search)
   if (params.providerUniqueId) qp.set('provider_unique_id', params.providerUniqueId)
-  if (params.itemId) qp.set('item_id', params.itemId)
   if (params.page != null) qp.set('page', String(params.page))
   if (params.pageSize != null) qp.set('pageSize', String(params.pageSize))
 

@@ -9,15 +9,15 @@ interface DirectLookupProps {
   error: string | null
   /** Trigger a provider ID lookup */
   onLookupProvider: (providerId: string) => void
-  /** Trigger an item ID lookup */
-  onLookupItem: (itemId: string) => void
+  /** Trigger a product URL lookup */
+  onLookupByUrl: (url: string) => void
   /** Clear direct lookup results and return to browse mode */
   onClear: () => void
 }
 
 /**
- * Direct Lookup panel — two input fields for pasting a provider_unique_id or
- * item_id to bypass the BPP > Domain > Provider browse flow.
+ * Direct Lookup panel — a product URL field and a provider ID field to bypass
+ * the BPP > Domain > Provider browse flow.
  *
  * Renders as a collapsible section at the top of the left sidebar.
  */
@@ -26,11 +26,11 @@ export default function DirectLookup({
   isLoading,
   error,
   onLookupProvider,
-  onLookupItem,
+  onLookupByUrl,
   onClear,
 }: DirectLookupProps) {
   const [providerIdInput, setProviderIdInput] = useState('')
-  const [itemIdInput, setItemIdInput] = useState('')
+  const [productUrlInput, setProductUrlInput] = useState('')
 
   const handleProviderSubmit = useCallback(() => {
     const trimmed = providerIdInput.trim()
@@ -38,15 +38,15 @@ export default function DirectLookup({
     onLookupProvider(trimmed)
   }, [providerIdInput, onLookupProvider])
 
-  const handleItemSubmit = useCallback(() => {
-    const trimmed = itemIdInput.trim()
+  const handleUrlSubmit = useCallback(() => {
+    const trimmed = productUrlInput.trim()
     if (!trimmed) return
-    onLookupItem(trimmed)
-  }, [itemIdInput, onLookupItem])
+    onLookupByUrl(trimmed)
+  }, [productUrlInput, onLookupByUrl])
 
   const handleClear = useCallback(() => {
     setProviderIdInput('')
-    setItemIdInput('')
+    setProductUrlInput('')
     onClear()
   }, [onClear])
 
@@ -55,9 +55,9 @@ export default function DirectLookup({
     if (e.key === 'Enter') handleProviderSubmit()
   }, [handleProviderSubmit])
 
-  const handleItemKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleItemSubmit()
-  }, [handleItemSubmit])
+  const handleUrlKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleUrlSubmit()
+  }, [handleUrlSubmit])
 
   return (
     <div className="border-b border-[var(--border-subtle)]">
@@ -89,22 +89,22 @@ export default function DirectLookup({
           </div>
         </div>
 
-        {/* Item ID input */}
+        {/* Product URL input */}
         <div className="space-y-1">
           <div className="flex gap-1.5">
             <input
               type="text"
-              placeholder="Item ID..."
-              value={itemIdInput}
-              onChange={e => setItemIdInput(e.target.value)}
-              onKeyDown={handleItemKeyDown}
+              placeholder="Paste product link..."
+              value={productUrlInput}
+              onChange={e => setProductUrlInput(e.target.value)}
+              onKeyDown={handleUrlKeyDown}
               disabled={isLoading}
               className="input-base flex-1 !text-xs !py-1.5"
             />
             <button
               type="button"
-              onClick={handleItemSubmit}
-              disabled={isLoading || !itemIdInput.trim()}
+              onClick={handleUrlSubmit}
+              disabled={isLoading || !productUrlInput.trim()}
               className="px-2.5 py-1.5 text-xs rounded-md bg-[var(--accent-base)] hover:bg-[var(--accent-hover)] text-white transition-interaction cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
             >
               {isLoading ? '...' : 'Go'}

@@ -69,18 +69,6 @@ describe('searchCatalog', () => {
     expect(calledUrl).toContain('search=seeds')
   })
 
-  it('builds URL with itemId param', async () => {
-    ;(fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    })
-
-    await searchCatalog({ itemId: 'item-abc-123' })
-
-    const calledUrl = (fetch as any).mock.calls[0][0] as string
-    expect(calledUrl).toContain('item_id=item-abc-123')
-  })
-
   it('includes page and pageSize params', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,

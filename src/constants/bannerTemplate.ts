@@ -37,7 +37,7 @@ export const PRODUCT_NAME = {
   x: LEFT_MARGIN,
   maxWidth: 370,
   fontFamily: '"Inter", sans-serif',
-  fontWeight: 800,
+  fontWeight: 700,
   color: '#000000',
   lineHeight: 1.2,
   maxLines: 2,
@@ -69,8 +69,8 @@ export const SUBHEADING_TEXT = {
   fontWeight: 400,
   color: '#000000',
   fontFamily: '"Inter", sans-serif',
-  /** lineHeight: 1 ensures rendered height === fontSize === SUBHEADING_TEXT_HEIGHT */
-  lineHeight: 1,
+  /** lineHeight: 1.2 leaves room for descenders (g, y, p, q) */
+  lineHeight: 1.2,
 };
 
 // --- Price Display (independent element below subheading) ---
@@ -102,7 +102,7 @@ export const CTA_BUTTON = {
   x: LEFT_MARGIN,
   paddingX: 12,
   paddingY: 8,
-  fontSize: 20,
+  fontSize: 16,
   fontWeight: 700,
   lineHeight: 1.1,
   color: '#FFFFFF',
@@ -151,8 +151,8 @@ export const LEFT_SECTION_GAPS: Record<string, number> = {
 /** Price row height: selling price font size with lineHeight:1 */
 export const PRICE_HEIGHT = PRICE_DISPLAY.sellingPrice.fontSize;
 
-/** Subheading text height: single-line text */
-export const SUBHEADING_TEXT_HEIGHT = SUBHEADING_TEXT.fontSize;
+/** Subheading text height: fontSize * lineHeight */
+export const SUBHEADING_TEXT_HEIGHT = SUBHEADING_TEXT.fontSize * SUBHEADING_TEXT.lineHeight;
 
 /** CTA box height: paddingY*2 + fontSize*lineHeight */
 export const CTA_HEIGHT = CTA_BUTTON.paddingY * 2 + CTA_BUTTON.fontSize * CTA_BUTTON.lineHeight;
