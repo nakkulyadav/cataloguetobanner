@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   FM-1: Design System Tokens — CSS Custom Properties
+   All surface, border, text, accent, status, shadow, and motion tokens.
+   ========================================================================== */
+:root {
+  /* Surfaces — layered near-black palette */
+  --surface-0: #0a0a0b;
+  --surface-1: #111113;
+  --surface-2: #1a1a1f;
+  --surface-3: #222229;
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-muted: rgba(255, 255, 255, 0.10);
+  --border-focus: #6366f1;
+
+  /* Text hierarchy */
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --text-disabled: #52525b;
+
+  /* Accent — indigo system */
+  --accent-base: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-soft: rgba(99, 102, 241, 0.12);
+
+  /* Status colors */
+  --status-info: #60a5fa;
+  --status-info-bg: rgba(96, 165, 250, 0.10);
+  --status-warning: #fbbf24;
+  --status-warning-bg: rgba(251, 191, 36, 0.10);
+  --status-error: #f87171;
+  --status-error-bg: rgba(248, 113, 113, 0.10);
+
+  /* Shadows */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-deep: 0 24px 48px rgba(0, 0, 0, 0.65);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ==========================================================================
+   FM-2: Base Styles — body, font smoothing, Inter font family
+   ========================================================================== */
+body {
+  background-color: var(--surface-0);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ==========================================================================
+   FM-5: Selection, Focus, and Scrollbar Styles
+   ========================================================================== */
+
+/* Selection highlight uses accent color */
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* Global focus-visible ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Thin scrollbar — webkit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Firefox thin scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+/* ==========================================================================
+   FM-4: Utility Classes — transition, focus ring, input base
+   ========================================================================== */
+@layer utilities {
+  /* Standard interaction transition for hover/active states */
+  .transition-interaction {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  /* Reusable focus ring for custom focus styles */
+  .focus-ring {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+
+  /* Base input styling — dark surface, muted border, accent focus */
+  .input-base {
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-muted);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    transition-property: border-color, box-shadow;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+  .input-base::placeholder {
+    color: var(--text-tertiary);
+  }
+  .input-base:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+}
+
+/* ==========================================================================
+   FM-32: Dialog entry animation (used by BackgroundGallery + ExportModal)
+   ========================================================================== */
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.dialog-enter {
+  animation: dialogIn 200ms var(--ease-standard) both;
+}

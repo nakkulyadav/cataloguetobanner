@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (contains API keys)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Large catalogue data files (not for git)
+catalogue/
+public/catalogue/*.json
+public/catalogue/catalog_store_data
+public/catalogue/Unconfirmed
