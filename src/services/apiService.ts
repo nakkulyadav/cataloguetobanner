@@ -41,7 +41,13 @@ export async function searchCatalog(
 
   const contentType = response.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
-    throw new Error('API returned an unexpected response — please try again or contact support')
+    // Try to extract debug info if the proxy returned a structured error
+    let detail = ''
+    try {
+      const errBody = await response.clone().json() as Record<string, unknown>
+      detail = ` [${errBody.backendStatus} ${errBody.backendContentType} — ${errBody.backendBodySnippet}]`
+    } catch { /* ignore */ }
+    throw new Error(`API returned an unexpected response${detail}`)
   }
 
   return response.json() as Promise<ApiPaginatedResponse<ApiCatalogItem>>

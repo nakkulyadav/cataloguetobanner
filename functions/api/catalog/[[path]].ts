@@ -39,8 +39,15 @@ export async function onRequest(context: { request: Request }): Promise<Response
 
   const contentType = backendResponse.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
+    const body = await backendResponse.text()
     return new Response(
-      JSON.stringify({ error: 'Backend returned an unexpected response', status: backendResponse.status }),
+      JSON.stringify({
+        error: 'Backend returned an unexpected response',
+        backendStatus: backendResponse.status,
+        backendContentType: contentType,
+        backendUrl,
+        backendBodySnippet: body.slice(0, 300),
+      }),
       { status: 502, headers: { 'content-type': 'application/json' } },
     )
   }
