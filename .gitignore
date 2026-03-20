@@ -29,3 +29,7 @@ catalogue/
 public/catalogue/*.json
 public/catalogue/catalog_store_data
 public/catalogue/Unconfirmed
+
+.dev.vars*
+!.dev.vars.example
+!.env.example
