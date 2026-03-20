@@ -11,9 +11,19 @@ export async function onRequest(context: { request: Request }): Promise<Response
   const backendPath = url.pathname.replace(/^\/api\/catalog/, '')
   const backendUrl = `https://prod.digihaat.in/analyticsDashboard/catalog${backendPath}${url.search}`
 
+  // Replicate Vite's `changeOrigin: true` — forward only safe headers and
+  // set Host to the target so the backend doesn't reject the request.
+  const forwardHeaders = new Headers()
+  for (const [key, value] of context.request.headers.entries()) {
+    const lower = key.toLowerCase()
+    if (lower === 'origin' || lower === 'referer' || lower === 'host') continue
+    forwardHeaders.set(key, value)
+  }
+  forwardHeaders.set('host', 'prod.digihaat.in')
+
   const backendRequest = new Request(backendUrl, {
     method: context.request.method,
-    headers: context.request.headers,
+    headers: forwardHeaders,
     body: context.request.body,
   })
 
