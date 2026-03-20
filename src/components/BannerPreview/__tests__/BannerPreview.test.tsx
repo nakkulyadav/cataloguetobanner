@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import React from 'react'
 import BannerPreview from '@/components/BannerPreview/BannerPreview'
 import {
   IMAGE_LEFT_BARRIER,
