@@ -20,6 +20,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Wrangler (Workers autoconfig — do not deploy as Workers, use Pages)
+wrangler.jsonc
+.wrangler/
+
 # Large catalogue data files (not for git)
 catalogue/
 public/catalogue/*.json

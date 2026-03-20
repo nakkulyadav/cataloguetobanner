@@ -35,19 +35,25 @@ export async function searchCatalog(
 
   const response = await fetch(`${API_BASE_URL}?${qp.toString()}`, { signal })
 
+  const contentType = response.headers.get('content-type') ?? ''
+  const isJson = contentType.includes('application/json')
+
   if (!response.ok) {
+    // Proxy may have returned a structured JSON error — extract debug info if so
+    if (isJson) {
+      try {
+        const errBody = await response.json() as Record<string, unknown>
+        const snippet = errBody.backendBodySnippet ? ` — ${errBody.backendBodySnippet}` : ''
+        throw new Error(`Proxy error: backend returned ${errBody.backendStatus} (${errBody.backendContentType})${snippet}`)
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith('Proxy error:')) throw e
+      }
+    }
     throw new Error(`HTTP ${response.status}: ${response.statusText}`)
   }
 
-  const contentType = response.headers.get('content-type') ?? ''
-  if (!contentType.includes('application/json')) {
-    // Try to extract debug info if the proxy returned a structured error
-    let detail = ''
-    try {
-      const errBody = await response.clone().json() as Record<string, unknown>
-      detail = ` [${errBody.backendStatus} ${errBody.backendContentType} — ${errBody.backendBodySnippet}]`
-    } catch { /* ignore */ }
-    throw new Error(`API returned an unexpected response${detail}`)
+  if (!isJson) {
+    throw new Error('API returned an unexpected response — the proxy may not be running (got HTML instead of JSON)')
   }
 
   return response.json() as Promise<ApiPaginatedResponse<ApiCatalogItem>>
