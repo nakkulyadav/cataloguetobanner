@@ -1,6 +1,24 @@
 # Feature Implementation Plan
 
-**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE`
+**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE ✅`
+
+### IC — Image Clamp (left-edge barrier on zoom)
+- [x] IC-1: `constants/bannerTemplate.ts` — add `IMAGE_LEFT_BARRIER`
+- [x] IC-2: `components/BannerPreview/BannerPreview.tsx` — clamp `left` to keep left edge ≥ barrier
+- [x] IC-3: `BannerPreview.test.tsx` — 4 tests: no-clamp, active-clamp ×2, property invariant (137 passing)
+
+### ZM — Image Zoom Sliders
+- [x] ZM-1: `types/index.ts` — add `logoScale`, `productImageScale` to `BannerState`
+- [x] ZM-2: `useBannerState.tsx` — state + setters + reset on `selectProduct`
+- [x] ZM-3: `BannerControls.tsx` — `ZoomSlider` sub-component + new props
+- [x] ZM-4: `BannerPreview.tsx` — apply `transform: scale()` to logo + product image
+- [x] ZM-5: `App.tsx` — wire new state fields + props
+- [x] ZM-6: Tests — `BannerControls`, `useBannerState`
+
+### QS-26 ✅ Fix quantity sticker showing "1 unit" for multi-pack products
+- Suppress ONDC generic placeholder `{ unit:"unit", value:"1" }` in `catalogueParser.ts`
+- Fallback: extract "Pack of N" via regex from product name / shortDesc
+- 8 new tests covering suppression, regex extraction, case insensitivity, priority order
 
 ## TLDR
 Build a client-side React app that lets Digihaat employees search products from a JSON catalogue, customize banner elements (background, CTA, offer badge), preview a 712×322px banner in real-time, and export it as PNG/JPG/WEBP. Dark theme modern dashboard UI. No backend — catalogue is a static JSON file.
@@ -1796,3 +1814,69 @@ Adds two input fields at the top of the sidebar for pasting a `provider_unique_i
 - `src/hooks/useProviderProducts.ts` — unchanged
 - `src/services/catalogueParser.ts` — unchanged (reused by `useDirectLookup`)
 - `src/types/index.ts` — unchanged
+
+---
+
+## Feature: Quantity Sticker on Banner
+
+**Summary:** Add a toggleable dark pill sticker positioned bottom-right of the product image, showing pack/quantity info (e.g. "Pack of 5", "200 ml"). Auto-populated from catalogue data, user-editable override.
+
+### Phase 1 — Investigate JSON source
+
+- [x] ✅ QS-1: Inspect a real API response payload and locate the quantity fields. Candidates:
+  - `item_details.quantity.unitized.measure.unit` + `.value` ← **confirmed path**
+  - `item_details.tags` entry with a relevant code (like `@ondc/org/statutory_reqs_prepackaged_commodities`)
+- [x] ✅ QS-2: Document the confirmed JSON path and note which BPPs/products populate it vs. leave it null
+  - Path: `item_details.quantity.unitized.measure.{ unit, value }` (e.g. `unit="Pack"`, `value="5"`)
+  - Many products will have this as `null`/`undefined` — handled gracefully
+- [x] ✅ QS-3: Decide on the display format based on what the data looks like (e.g. `"{unit}\nof {value}"` vs `"{value} {unit}"`)
+  - Auto-populated as free-form `"{value} {unit}"` (e.g. "5 Pack", "200 ml") — user edits freely
+
+### Phase 2 — Types & constants
+
+- [x] ✅ QS-4: Extend `ApiCatalogItem.item_details` in `src/types/index.ts` with the confirmed `quantity` shape
+- [x] ✅ QS-5: Add `quantity?: { unit: string; value: string }` to `ParsedProduct` in `src/types/index.ts`
+- [x] ✅ QS-6: Add `showQuantitySticker: boolean` and `quantityStickerText: string | null` to `BannerState` in `src/types/index.ts`
+- [x] ✅ QS-7: Add `QUANTITY_STICKER` constant to `src/constants/bannerTemplate.ts`:
+  - Size: width, min-height, padding
+  - Font: size, weight, family, color
+  - Background color (dark pill, e.g. `#3D3D3D`)
+  - Position: bottom-right of product image area, with offset from edge
+
+### Phase 3 — Parser extraction
+
+- [x] ✅ QS-8: In `catalogueParser.ts` → `parseApiItem()`, extract `unit` + `value` from confirmed JSON path
+- [x] ✅ QS-9: Expose extracted quantity on the returned `ParsedProduct` (null when not present)
+- [x] ✅ QS-10: Add unit tests in `src/services/__tests__/catalogueParser.test.ts`:
+  - Item with quantity data → correct unit/value extracted
+  - Item with missing `quantity` field → `quantity: null` (no crash)
+  - Item with partial data (only unit, no value) → graceful null
+
+### Phase 4 — Banner state
+
+- [x] ✅ QS-11: Initialize new fields in `useBannerState.tsx`:
+  - `showQuantitySticker: false` (default off)
+  - `quantityStickerText: null`
+- [x] ✅ QS-12: When a product is selected, auto-populate `quantityStickerText` from `product.quantity` (format: `"{unit}\nof {value}"` or confirmed format from QS-3). Clear to null if quantity absent.
+- [x] ✅ QS-13: Expose `setQuantityStickerText` and `setShowQuantitySticker` for BannerControls to call
+
+### Phase 5 — BannerPreview rendering
+
+- [x] ✅ QS-14: In `BannerPreview`, conditionally render the sticker when `showQuantitySticker` is true and `quantityStickerText` is non-empty
+- [x] ✅ QS-15: Position sticker absolutely — bottom-right corner of the product image area, using `QUANTITY_STICKER` constants
+- [x] ✅ QS-16: Style: dark rounded pill, centered two-line text, using `QUANTITY_STICKER` font/color constants
+- [x] ✅ QS-17: Ensure sticker is captured correctly by `html-to-image` (no clipping, z-index correct)
+
+### Phase 6 — BannerControls UI
+
+- [x] ✅ QS-18: Add sticker toggle (On/Off) to `BannerControls`, consistent with existing toggle pattern (logo, heading, CTA, etc.)
+- [x] ✅ QS-19: Below the toggle, show an editable text field pre-filled with `quantityStickerText` — visible only when toggle is On
+- [x] ✅ QS-20: Wiring: toggle calls `setShowQuantitySticker`, text field calls `setQuantityStickerText`
+
+### Phase 7 — Tests
+
+- [x] ✅ QS-21: Unit test `useBannerState`: selecting a product with quantity → `quantityStickerText` auto-populated
+- [x] ✅ QS-22: Unit test `useBannerState`: selecting a product without quantity → `quantityStickerText` is null, `showQuantitySticker` stays false
+- [x] ✅ QS-23: Render test `BannerPreview`: sticker visible when `showQuantitySticker=true` + text set
+- [x] ✅ QS-24: Render test `BannerPreview`: sticker absent when `showQuantitySticker=false`
+- [x] ✅ QS-25: Render test `BannerControls`: toggle and text field render; interactions fire correct callbacks

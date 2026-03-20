@@ -52,7 +52,7 @@ export const HEADING_COMPACT = {
   fontWeight: 600,
   lineHeight: 1.2,
   maxLines: 1,
-  maxFontSize: 28,
+  maxFontSize: 29,
   minFontSize: 24,
   fontSizeStep: 1,
 };
@@ -71,6 +71,8 @@ export const SUBHEADING_TEXT = {
   fontFamily: '"Inter", sans-serif',
   /** lineHeight: 1.2 leaves room for descenders (g, y, p, q) */
   lineHeight: 1.2,
+  /** Allow up to 2 lines before clamping — measured + applied at render time */
+  maxLines: 2,
 };
 
 // --- Price Display (independent element below subheading) ---
@@ -102,21 +104,21 @@ export const CTA_BUTTON = {
   x: LEFT_MARGIN,
   paddingX: 12,
   paddingY: 8,
-  fontSize: 16,
+  fontSize: 20,
   fontWeight: 700,
   lineHeight: 1.1,
   color: '#FFFFFF',
   borderRadius: 8,
   /** Default CTA background when no background is selected */
-  defaultBg: '#457DD1',
+  defaultBg: '#1A43BF',
 };
 
 // --- T&C Text ---
 export const TNC_TEXT = {
   x: LEFT_MARGIN,
-  fontSize: 14,
+  fontSize: 10,
   fontWeight: 500,
-  color: '#000000',
+  color: '#393f86',
   maxWidth: 370,
   /** lineHeight: 1.2 ensures height = fontSize * 1.2 = TNC_HEIGHT */
   lineHeight: 1.2,
@@ -129,7 +131,7 @@ export const OFFER_BADGE = {
   fontSize: 20,
   fontWeight: 500,
   color: '#FFFFFF',
-  backgroundColor: '#85929E',
+  backgroundColor: '#424040',
   /** Asymmetric corners: TL=0, TR=matches canvas, BR=0, BL=8 */
   borderRadius: `0px ${BANNER_RADIUS}px 0px 8px`,
 };
@@ -140,9 +142,9 @@ export const OFFER_BADGE = {
 // in getGapBetween() which walks the ordered element list.
 export const LEFT_SECTION_GAPS: Record<string, number> = {
   'logo-heading': 10,
-  'heading-subheading': 5,  // compact heading → subheading
+  'heading-subheading': 10,  // compact heading → subheading
   'heading-price': 10,       // normal heading → price (subheading off)
-  'subheading-price': 20,    // subheading → price
+  'subheading-price': 15,    // subheading → price
   'subheading-cta': 15,      // subheading → CTA (when price is off)
   'price-cta': 15,           // price → CTA
   'cta-tnc': 3,
@@ -161,10 +163,46 @@ export const CTA_HEIGHT = CTA_BUTTON.paddingY * 2 + CTA_BUTTON.fontSize * CTA_BU
 export const TNC_HEIGHT = TNC_TEXT.fontSize * TNC_TEXT.lineHeight;
 
 // --- Product Image (right half, bottom-aligned) ---
+
+/**
+ * The x-coordinate that defines the hard left boundary for the product image.
+ * The image's left edge must never cross this line, regardless of zoom level.
+ *
+ * Set to the banner's 50/50 split point so the right-half image never
+ * encroaches on the left-half text content (logo, heading, price, CTA).
+ */
+export const IMAGE_LEFT_BARRIER = 340;
+
 export const PRODUCT_IMAGE = {
   /** Horizontal centre of the right half: (361 + 722) / 2 */
   centerX: 550,
   width: 300,
   height: 270,
   bottomOffset: 3,
+};
+
+// --- Quantity Sticker (bottom-right of product image area) ---
+// Positioned so its right edge aligns with the product image's right edge.
+// Overlaps the lower-right corner of the product image, matching the
+// design reference (e.g. "5 Pack", "200 ml").
+export const QUANTITY_STICKER = {
+  /**
+   * Distance from the banner's right edge.
+   * = BANNER_WIDTH - (PRODUCT_IMAGE.centerX + PRODUCT_IMAGE.width / 2)
+   * Places the sticker's right edge flush with the product image's right edge.
+   */
+  right: BANNER_WIDTH - (PRODUCT_IMAGE.centerX + PRODUCT_IMAGE.width / 2.3),
+  /** Distance from the banner's bottom edge — slightly above the image bottom edge */
+  bottom: PRODUCT_IMAGE.bottomOffset + 25,
+  /** Fixed pill width; height grows with content (word-wrap) */
+  width: 65,
+  paddingX: 10,
+  paddingY: 12,
+  borderRadius: 36,
+  fontSize: 16,
+  fontWeight: 600,
+  fontFamily: '"Inter", sans-serif',
+  color: '#FFFFFF',
+  lineHeight: 1.3,
+  /** Background colour is sourced from the active CTA colour at render time (see BannerPreview) */
 };

@@ -17,5 +17,23 @@ export async function onRequest(context: { request: Request }): Promise<Response
     body: context.request.body,
   })
 
-  return fetch(backendRequest)
+  let backendResponse: Response
+  try {
+    backendResponse = await fetch(backendRequest)
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: 'Failed to reach backend', detail: String(err) }),
+      { status: 502, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
+  const contentType = backendResponse.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    return new Response(
+      JSON.stringify({ error: 'Backend returned an unexpected response', status: backendResponse.status }),
+      { status: 502, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
+  return backendResponse
 }

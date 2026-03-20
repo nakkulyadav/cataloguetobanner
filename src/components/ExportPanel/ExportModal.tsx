@@ -43,8 +43,8 @@ export default function ExportModal({
           </button>
         </div>
 
-        {/* Format buttons (2×2 grid) */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Format buttons */}
+        <div className="grid grid-cols-3 gap-3">
           {FORMAT_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -62,15 +62,6 @@ export default function ExportModal({
               {isExporting ? 'Exporting...' : opt.label}
             </button>
           ))}
-
-          {/* Export to CMS — placeholder */}
-          <button
-            disabled
-            className="px-4 py-3 rounded-lg text-sm font-semibold bg-[var(--surface-2)] text-[var(--text-disabled)] cursor-not-allowed border border-[var(--border-subtle)]"
-          >
-            Export to CMS
-            <span className="block text-xs font-normal text-[var(--text-tertiary)] mt-1">Coming soon</span>
-          </button>
         </div>
       </div>
     </div>

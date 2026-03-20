@@ -39,5 +39,10 @@ export async function searchCatalog(
     throw new Error(`HTTP ${response.status}: ${response.statusText}`)
   }
 
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('API returned an unexpected response — please try again or contact support')
+  }
+
   return response.json() as Promise<ApiPaginatedResponse<ApiCatalogItem>>
 }

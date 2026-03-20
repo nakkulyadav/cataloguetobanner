@@ -69,6 +69,14 @@ function App() {
     priceOverride,
     setPriceOverride,
     setSubheadingText,
+    showQuantitySticker,
+    quantityStickerText,
+    toggleQuantitySticker,
+    setQuantityStickerText,
+    logoScale,
+    productImageScale,
+    setLogoScale,
+    setProductImageScale,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
 
@@ -245,6 +253,10 @@ function App() {
       productNameOverride,
       priceOverride,
       productImageOverride,
+      logoScale,
+      productImageScale,
+      showQuantitySticker,
+      quantityStickerText,
     }
   }, [
     selectedProduct,
@@ -266,6 +278,10 @@ function App() {
     productImageOverride,
     bgRemovedProductUrl,
     bgRemovedLogoUrl,
+    logoScale,
+    productImageScale,
+    showQuantitySticker,
+    quantityStickerText,
   ])
 
   // Log missing images when products load (uses active data source)
@@ -489,8 +505,16 @@ function App() {
             onCtaToggle={toggleCta}
             brandLogoOverride={brandLogoOverride}
             onBrandLogoChange={setBrandLogoOverride}
+            logoScale={logoScale}
+            onLogoScaleChange={setLogoScale}
             productImageOverride={productImageOverride}
             onProductImageChange={setProductImageOverride}
+            productImageScale={productImageScale}
+            onProductImageScaleChange={setProductImageScale}
+            showQuantitySticker={showQuantitySticker}
+            onQuantityStickerToggle={toggleQuantitySticker}
+            quantityStickerText={quantityStickerText}
+            onQuantityStickerTextChange={setQuantityStickerText}
           />
         </div>
 

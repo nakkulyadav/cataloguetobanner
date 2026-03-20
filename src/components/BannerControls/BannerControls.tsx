@@ -48,9 +48,24 @@ interface BannerControlsProps {
   /** Current brand logo override (blob or remote URL). null = catalogue logo. */
   brandLogoOverride: string | null
   onBrandLogoChange: (url: string | null) => void
+  /** Zoom scale for the brand logo (1 = 100%). Range [0.5, 2.0]. */
+  logoScale: number
+  onLogoScaleChange: (scale: number) => void
   /** Current product image override (blob URL). null = catalogue image. */
   productImageOverride: string | null
   onProductImageChange: (url: string | null) => void
+  /** Zoom scale for the product image (1 = 100%). Range [0.5, 2.0]. */
+  productImageScale: number
+  onProductImageScaleChange: (scale: number) => void
+  /** Whether the quantity sticker is currently visible on the banner */
+  showQuantitySticker: boolean
+  onQuantityStickerToggle: () => void
+  /**
+   * Text inside the quantity sticker. Auto-populated from catalogue as "{value} {unit}".
+   * null = no catalogue data; empty field when sticker is on.
+   */
+  quantityStickerText: string | null
+  onQuantityStickerTextChange: (text: string | null) => void
 }
 
 export default function BannerControls({
@@ -86,22 +101,35 @@ export default function BannerControls({
   onCtaToggle,
   brandLogoOverride,
   onBrandLogoChange,
+  logoScale,
+  onLogoScaleChange,
   productImageOverride,
   onProductImageChange,
+  productImageScale,
+  onProductImageScaleChange,
+  showQuantitySticker,
+  onQuantityStickerToggle,
+  quantityStickerText,
+  onQuantityStickerTextChange,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
 
   return (
     <div className="space-y-5 p-3">
-      {/* Brand Logo — toggle + upload zone */}
+      {/* Brand Logo — toggle + upload zone + zoom slider */}
       <Section title="Brand Logo">
         <TogglePill checked={showLogo} onToggle={onLogoToggle} />
         {showLogo && (
-          <div className="mt-2">
+          <div className="mt-2 space-y-2">
             <ImageUploadZone
               currentImage={brandLogoOverride}
               onImageChange={onBrandLogoChange}
               label="Brand Logo"
+            />
+            <ZoomSlider
+              scale={logoScale}
+              onChange={onLogoScaleChange}
+              onReset={() => onLogoScaleChange(1)}
             />
           </div>
         )}
@@ -112,15 +140,15 @@ export default function BannerControls({
         <TogglePill checked={showHeading} onToggle={onHeadingToggle} />
         {showHeading && (
           <div className="mt-2">
-            <input
-              type="text"
+            <textarea
+              rows={2}
               value={productNameOverride ?? originalProductName ?? ''}
               onChange={(e) => {
                 const value = e.target.value
                 // Reset to null when the user types back the exact original name
                 onProductNameChange(value === originalProductName ? null : value)
               }}
-              className="input-base"
+              className="input-base resize-none"
               placeholder="Product name..."
             />
             {productNameOverride !== null && (
@@ -139,12 +167,11 @@ export default function BannerControls({
       <Section title="Subheading">
         <TogglePill checked={showSubheading} onToggle={onSubheadingToggle} />
         {showSubheading && (
-          <input
-            type="text"
+          <textarea
+            rows={2}
             value={subheadingText}
             onChange={(e) => onSubheadingTextChange(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-            className="input-base mt-2"
+            className="input-base resize-none mt-2"
             placeholder="Enter subheading..."
           />
         )}
@@ -296,13 +323,39 @@ export default function BannerControls({
         )}
       </Section>
 
-      {/* Product Image — upload zone */}
+      {/* Product Image — upload zone + zoom slider */}
       <Section title="Product Image">
-        <ImageUploadZone
-          currentImage={productImageOverride}
-          onImageChange={onProductImageChange}
-          label="Product Image"
-        />
+        <div className="space-y-2">
+          <ImageUploadZone
+            currentImage={productImageOverride}
+            onImageChange={onProductImageChange}
+            label="Product Image"
+          />
+          <ZoomSlider
+            scale={productImageScale}
+            onChange={onProductImageScaleChange}
+            onReset={() => onProductImageScaleChange(1)}
+          />
+        </div>
+      </Section>
+
+      {/* Quantity Sticker — toggle + editable text (auto-filled from catalogue) */}
+      <Section title="Quantity Sticker">
+        <TogglePill checked={showQuantitySticker} onToggle={onQuantityStickerToggle} />
+        {showQuantitySticker && (
+          <input
+            type="text"
+            value={quantityStickerText ?? ''}
+            onChange={(e) => {
+              // Convert empty string back to null (no data) to keep the
+              // null/empty distinction meaningful in BannerPreview.
+              onQuantityStickerTextChange(e.target.value || null)
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+            className="input-base mt-2"
+            placeholder="e.g. 5 Pack"
+          />
+        )}
       </Section>
     </div>
   )
@@ -359,6 +412,51 @@ function TogglePill({ checked, onToggle }: { checked: boolean; onToggle: () => v
         Off
       </span>
     </button>
+  )
+}
+
+/**
+ * Zoom slider shown beneath each image field.
+ * Range: 50%–200% in 5% steps. Shows current percentage and a reset button
+ * when the scale has been changed from the default (1.0).
+ */
+function ZoomSlider({
+  scale,
+  onChange,
+  onReset,
+}: {
+  scale: number
+  onChange: (value: number) => void
+  onReset: () => void
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-[var(--text-tertiary)]">Zoom</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-[var(--text-tertiary)]">
+            {Math.round(scale * 100)}%
+          </span>
+          {scale !== 1 && (
+            <button
+              onClick={onReset}
+              className="text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer transition-interaction"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={0.5}
+        max={2}
+        step={0.05}
+        value={scale}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full h-1 cursor-pointer accent-[var(--accent-base)]"
+      />
+    </div>
   )
 }
 

@@ -24,6 +24,11 @@ export interface ParsedProduct {
   provider: ProviderDetails;
   /** Formatted prices from catalogue. Undefined when price data is missing/invalid. */
   price?: ProductPrice;
+  /**
+   * Package quantity from catalogue (e.g. { unit: "Pack", value: "5" }).
+   * Undefined when the catalogue item has no unitized measure data.
+   */
+  quantity?: { unit: string; value: string };
 }
 
 export interface ProductGroup {
@@ -79,6 +84,13 @@ export interface ApiCatalogItem {
     quantity?: {
       available?: { count: string }
       maximum?: { count: string }
+      /** Unitized package measure — source of the quantity sticker data */
+      unitized?: {
+        measure?: {
+          unit: string
+          value: string
+        }
+      }
     }
     tags?: Array<{
       code: string
@@ -93,11 +105,23 @@ export interface ApiCatalogItem {
     descriptor: ProviderDescriptor
     rating?: string
   } | null
-  /** Raw source contains the full on_search payload including provider_details */
+  /** Raw source contains the full on_search payload including provider_details and item_details */
   raw_source?: {
     provider_details?: {
       id: string
       descriptor: ProviderDescriptor
+    }
+    /** Full ONDC item_details — used as fallback when top-level item_details is absent or incomplete */
+    item_details?: {
+      quantity?: {
+        unitized?: {
+          measure?: {
+            unit: string
+            value: string
+          }
+        }
+      }
+      [key: string]: unknown
     }
     [key: string]: unknown
   }
@@ -167,6 +191,25 @@ export interface BannerState {
   priceOverride: ProductPrice | null;
   /** Uploaded product image blob URL override. null = use catalogue image. */
   productImageOverride: string | null;
+  /**
+   * Scale factor applied to the brand logo image (1 = 100%, 0.5 = 50%, 2 = 200%).
+   * Uses CSS transform:scale() so the layout box remains fixed.
+   */
+  logoScale: number;
+  /**
+   * Scale factor applied to the product image (1 = 100%, 0.5 = 50%, 2 = 200%).
+   * Uses CSS transform:scale() so the layout box remains fixed.
+   */
+  productImageScale: number;
+  /** Whether the quantity sticker is visible on the banner (default: false) */
+  showQuantitySticker: boolean;
+  /**
+   * Text displayed inside the quantity sticker.
+   * Auto-populated from catalogue as "{value} {unit}" (e.g. "5 Pack").
+   * null when no catalogue quantity data is present.
+   * Freely editable by the user.
+   */
+  quantityStickerText: string | null;
 }
 
 // --- Logging ---

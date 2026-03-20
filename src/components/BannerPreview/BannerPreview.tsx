@@ -12,6 +12,7 @@ import {
   TNC_TEXT,
   OFFER_BADGE,
   PRODUCT_IMAGE,
+  IMAGE_LEFT_BARRIER,
   PRICE_DISPLAY,
   SUBHEADING,
   SUBHEADING_TEXT,
@@ -22,6 +23,7 @@ import {
   SUBHEADING_TEXT_HEIGHT,
   CTA_HEIGHT,
   TNC_HEIGHT,
+  QUANTITY_STICKER,
 } from '@/constants/bannerTemplate'
 
 interface BannerPreviewProps {
@@ -83,6 +85,10 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       productNameOverride,
       priceOverride,
       productImageOverride,
+      logoScale,
+      productImageScale,
+      showQuantitySticker,
+      quantityStickerText,
     } = state
 
     const brandLogo = brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
@@ -141,7 +147,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         el.style.fontFamily = fontFamily
         el.style.width = `${maxWidth}px`
         el.style.wordBreak = 'break-word'
-        el.style.whiteSpace = 'normal'
+        el.style.whiteSpace = 'pre-line'
         el.textContent = displayName
 
         const maxHeight = maxLines * size * lh
@@ -159,6 +165,31 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
     // Use the actual measured height for layout, not the theoretical max
     const headingHeight = actualHeadingHeight
 
+    // --- Adaptive height measurement for subheading (up to maxLines lines) ---
+    const subheadingMeasureRef = useRef<HTMLDivElement>(null)
+    const [actualSubheadingHeight, setActualSubheadingHeight] = useState(SUBHEADING_TEXT_HEIGHT)
+
+    useEffect(() => {
+      const el = subheadingMeasureRef.current
+      if (!el || !subheadingText) {
+        setActualSubheadingHeight(SUBHEADING_TEXT_HEIGHT)
+        return
+      }
+      const { fontSize, fontWeight, fontFamily, lineHeight, maxLines } = SUBHEADING_TEXT
+      el.style.fontSize = `${fontSize}px`
+      el.style.fontWeight = String(fontWeight)
+      el.style.fontFamily = fontFamily
+      el.style.lineHeight = `${lineHeight}`
+      el.style.width = `${SUBHEADING.maxWidth}px`
+      el.style.wordBreak = 'break-word'
+      el.style.whiteSpace = 'pre-line'
+      el.textContent = subheadingText
+
+      // Cap at the maximum allowed height (maxLines × line height)
+      const maxH = maxLines * fontSize * lineHeight
+      setActualSubheadingHeight(Math.min(el.scrollHeight, maxH))
+    }, [subheadingText])
+
     // --- Determine which elements are visible and their heights ---
     const visibleElements = useMemo(() => {
       const elements: Array<{ id: ElementId; height: number }> = []
@@ -170,7 +201,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         elements.push({ id: 'heading', height: headingHeight })
       }
       if (showSubheading && subheadingText) {
-        elements.push({ id: 'subheading', height: SUBHEADING_TEXT_HEIGHT })
+        elements.push({ id: 'subheading', height: actualSubheadingHeight })
       }
       if (showPrice && displayPrice) {
         elements.push({ id: 'price', height: PRICE_HEIGHT })
@@ -183,7 +214,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       }
 
       return elements
-    }, [showLogo, brandLogo, showHeading, displayName, headingHeight, showSubheading, subheadingText, showPrice, displayPrice, showCta, showTnc])
+    }, [showLogo, brandLogo, showHeading, displayName, headingHeight, showSubheading, subheadingText, actualSubheadingHeight, showPrice, displayPrice, showCta, showTnc])
 
     // --- Compute dynamic vertical positions ---
     // Elements are vertically centered as a group within the banner height.
@@ -236,9 +267,14 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           backgroundColor: BANNER_FALLBACK_BG,
         }}
       >
-        {/* Hidden element for measuring text */}
+        {/* Hidden elements for measuring text — one per adaptive element */}
         <div
           ref={headingMeasureRef}
+          style={{ position: 'absolute', visibility: 'hidden', top: -9999, left: -9999 }}
+          aria-hidden="true"
+        />
+        <div
+          ref={subheadingMeasureRef}
           style={{ position: 'absolute', visibility: 'hidden', top: -9999, left: -9999 }}
           aria-hidden="true"
         />
@@ -271,6 +307,9 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               height: BRAND_LOGO.height,
               objectFit: 'contain',
               objectPosition: 'left',
+              // Scale from the left edge so the logo stays left-anchored
+              transform: `scale(${logoScale})`,
+              transformOrigin: 'left center',
             }}
           />
         )}
@@ -293,6 +332,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               WebkitLineClamp: headingConfig.maxLines,
               WebkitBoxOrient: 'vertical',
               wordBreak: 'break-word',
+              whiteSpace: 'pre-line',
             }}
           >
             {displayName}
@@ -300,21 +340,27 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         )}
 
         {/* Subheading Text (independent element, shown when showSubheading is ON) */}
+        {/* Supports up to SUBHEADING_TEXT.maxLines lines; height is measured and   */}
+        {/* fed into the layout engine so all other elements reflow dynamically.     */}
         {showSubheading && subheadingText && positions.subheading !== undefined && (
           <div
             style={{
               position: 'absolute',
               left: SUBHEADING.x,
               top: positions.subheading,
-              maxWidth: SUBHEADING.maxWidth,
-              height: SUBHEADING_TEXT_HEIGHT,
+              width: SUBHEADING.maxWidth,
+              height: actualSubheadingHeight,
               fontSize: SUBHEADING_TEXT.fontSize,
               fontWeight: SUBHEADING_TEXT.fontWeight,
               color: SUBHEADING_TEXT.color,
               fontFamily: SUBHEADING_TEXT.fontFamily,
               lineHeight: SUBHEADING_TEXT.lineHeight,
-              whiteSpace: 'nowrap',
+              wordBreak: 'break-word',
+              whiteSpace: 'pre-line',
               overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: SUBHEADING_TEXT.maxLines,
+              WebkitBoxOrient: 'vertical',
             }}
           >
             {subheadingText}
@@ -438,13 +484,49 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
             style={{
               position: 'absolute',
               bottom: PRODUCT_IMAGE.bottomOffset,
-              left: PRODUCT_IMAGE.centerX,
-              transform: 'translateX(-50%)',
+              // As zoom increases, shift the image center rightward so the left
+              // edge never crosses IMAGE_LEFT_BARRIER (the 50/50 section split).
+              // At scale s: left edge = centerX - width*s/2.
+              // Clamp: centerX = max(nominal, barrier + width*s/2).
+              left: Math.max(
+                PRODUCT_IMAGE.centerX,
+                IMAGE_LEFT_BARRIER + (PRODUCT_IMAGE.width * productImageScale) / 2,
+              ),
+              // translateX(-50%) centres the image on `left`; scale() zooms from that centre
+              transform: `translateX(-50%) scale(${productImageScale})`,
               width: PRODUCT_IMAGE.width,
               height: PRODUCT_IMAGE.height,
               objectFit: 'contain',
             }}
           />
+        )}
+
+        {/* Quantity Sticker (bottom-right of product image, toggleable) */}
+        {showQuantitySticker && quantityStickerText && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: QUANTITY_STICKER.bottom,
+              right: QUANTITY_STICKER.right,
+              width: QUANTITY_STICKER.width,
+              paddingLeft: QUANTITY_STICKER.paddingX,
+              paddingRight: QUANTITY_STICKER.paddingX,
+              paddingTop: QUANTITY_STICKER.paddingY,
+              paddingBottom: QUANTITY_STICKER.paddingY,
+              borderRadius: QUANTITY_STICKER.borderRadius,
+              backgroundColor: ctaBgColor,
+              fontSize: QUANTITY_STICKER.fontSize,
+              fontWeight: QUANTITY_STICKER.fontWeight,
+              fontFamily: QUANTITY_STICKER.fontFamily,
+              color: QUANTITY_STICKER.color,
+              lineHeight: QUANTITY_STICKER.lineHeight,
+              textAlign: 'center',
+              wordBreak: 'break-word',
+              boxSizing: 'border-box' as const,
+            }}
+          >
+            {quantityStickerText}
+          </div>
         )}
       </div>
     )
