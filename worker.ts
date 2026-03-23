@@ -7,6 +7,7 @@
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> }
+  REMOVEBG_API_KEY: string
 }
 
 export default {
@@ -15,6 +16,10 @@ export default {
 
     if (url.pathname.startsWith('/api/catalog')) {
       return proxyCatalog(request, url)
+    }
+
+    if (url.pathname === '/api/removebg' && request.method === 'POST') {
+      return proxyRemoveBg(request, env.REMOVEBG_API_KEY)
     }
 
     return env.ASSETS.fetch(request)
@@ -66,4 +71,47 @@ async function proxyCatalog(request: Request, url: URL): Promise<Response> {
   }
 
   return backendResponse
+}
+
+async function proxyRemoveBg(request: Request, apiKey: string): Promise<Response> {
+  if (!apiKey) {
+    return new Response(
+      JSON.stringify({ error: 'REMOVEBG_API_KEY is not configured on the server' }),
+      { status: 503, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
+  const incomingForm = await request.formData()
+  const outgoingForm = new FormData()
+
+  const imageUrl = incomingForm.get('image_url')
+  const imageFile = incomingForm.get('image_file')
+
+  if (typeof imageUrl === 'string') {
+    outgoingForm.append('image_url', imageUrl)
+  } else if (imageFile != null && typeof imageFile !== 'string') {
+    outgoingForm.append('image_file', imageFile as Blob, 'image.png')
+  } else {
+    return new Response(
+      JSON.stringify({ error: 'Missing image_url or image_file in request' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
+  outgoingForm.append('size', 'auto')
+
+  const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+    method: 'POST',
+    headers: { 'X-Api-Key': apiKey },
+    body: outgoingForm,
+  })
+
+  // Forward the binary PNG (or error body) straight back to the client
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: {
+      'content-type': response.headers.get('content-type') ?? 'application/octet-stream',
+    },
+  })
 }
