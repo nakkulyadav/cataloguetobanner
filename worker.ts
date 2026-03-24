@@ -22,6 +22,10 @@ export default {
       return proxyRemoveBg(request, env.REMOVEBG_API_KEY)
     }
 
+    if (url.pathname === '/api/image' && request.method === 'GET') {
+      return proxyImage(url)
+    }
+
     return env.ASSETS.fetch(request)
   },
 }
@@ -71,6 +75,27 @@ async function proxyCatalog(request: Request, url: URL): Promise<Response> {
   }
 
   return backendResponse
+}
+
+async function proxyImage(url: URL): Promise<Response> {
+  const imageUrl = url.searchParams.get('url')
+  if (!imageUrl) {
+    return new Response('Missing url parameter', { status: 400 })
+  }
+
+  let response: Response
+  try {
+    response = await fetch(imageUrl)
+  } catch (err) {
+    return new Response(`Failed to fetch image: ${String(err)}`, { status: 502 })
+  }
+
+  const headers = new Headers()
+  headers.set('content-type', response.headers.get('content-type') ?? 'image/jpeg')
+  headers.set('access-control-allow-origin', '*')
+  headers.set('cache-control', 'public, max-age=86400')
+
+  return new Response(response.body, { status: response.status, headers })
 }
 
 async function proxyRemoveBg(request: Request, apiKey: string): Promise<Response> {

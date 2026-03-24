@@ -1,4 +1,11 @@
 import { forwardRef, useRef, useState, useEffect, useMemo } from 'react'
+
+/** Proxy external images through the Worker so html-to-image can fetch them (CORS). */
+function proxyUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')) return url
+  return `/api/image?url=${encodeURIComponent(url)}`
+}
 import type { BannerState } from '@/types'
 import {
   BANNER_WIDTH,
@@ -282,7 +289,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         {/* Background image (full bleed) */}
         {selectedBackground && (
           <img
-            src={selectedBackground.url}
+            src={proxyUrl(selectedBackground.url)}
             alt=""
             style={{
               position: 'absolute',
@@ -297,7 +304,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         {/* Brand Logo (dynamically positioned) */}
         {showLogo && brandLogo && positions.logo !== undefined && (
           <img
-            src={brandLogo}
+            src={proxyUrl(brandLogo)}
             alt={selectedProduct?.provider.brandName ?? ''}
             style={{
               position: 'absolute',
@@ -479,7 +486,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         {/* Product Image (right half, bottom-aligned, centered at x=541.5) */}
         {hasValidImage && effectiveImageUrl && (
           <img
-            src={effectiveImageUrl}
+            src={proxyUrl(effectiveImageUrl)}
             alt={selectedProduct?.name ?? 'Product'}
             style={{
               position: 'absolute',
