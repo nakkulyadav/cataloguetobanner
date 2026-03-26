@@ -111,7 +111,7 @@ export const CTA_BUTTON = {
   color: '#FFFFFF',
   borderRadius: 8,
   /** Default CTA background when no background is selected */
-  defaultBg: '#1A43BF',
+  defaultBg: '#2467CB',
 };
 
 // --- T&C Text ---
@@ -132,7 +132,7 @@ export const OFFER_BADGE = {
   fontSize: 20,
   fontWeight: 500,
   color: '#FFFFFF',
-  backgroundColor: '#424040',
+  backgroundColor: '#5F5F5F',
   /** Asymmetric corners: TL=0, TR=matches canvas, BR=0, BL=8 */
   borderRadius: `0px ${BANNER_RADIUS}px 0px 8px`,
 };

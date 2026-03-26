@@ -8,7 +8,7 @@ export const BACKGROUND_OPTIONS: BackgroundOption[] = [
   {
     id: 'bg-blue',
     url: '/backgrounds/blue bg.png',
-    ctaColor: '#1A43BF',
+    ctaColor: '#2467CB',
     ctaTextColor: '#FFFFFF',
   },
   {
