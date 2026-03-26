@@ -47,13 +47,14 @@ export const PRODUCT_NAME = {
 };
 
 // --- Heading Compact Mode (active when subheading is toggled ON) ---
-// Fixed single-line heading: smaller font, lighter weight, no adaptive sizing.
+// Allows up to 2 lines; smaller font range than normal mode to leave vertical
+// room for the subheading, price, and CTA within the 272px content area.
 export const HEADING_COMPACT = {
   fontWeight: 600,
   lineHeight: 1.2,
-  maxLines: 1,
-  maxFontSize: 29,
-  minFontSize: 24,
+  maxLines: 2,
+  maxFontSize: 26,
+  minFontSize: 20,
   fontSizeStep: 1,
 };
 

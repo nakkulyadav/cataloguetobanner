@@ -1,8 +1,13 @@
 import { forwardRef, useRef, useState, useEffect, useMemo } from 'react'
 
-/** Proxy external images through the Worker so html-to-image can fetch them (CORS). */
+/**
+ * Proxy external images through the Worker so html-to-image can fetch them (CORS).
+ * In dev, Vite has no /api/image handler so we return the original URL — images
+ * still display fine; only canvas export would lack CORS headers in dev.
+ */
 function proxyUrl(url: string | undefined): string | undefined {
   if (!url) return undefined
+  if (import.meta.env.DEV) return url
   if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')) return url
   return `/api/image?url=${encodeURIComponent(url)}`
 }
