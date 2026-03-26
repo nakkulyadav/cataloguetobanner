@@ -51,9 +51,14 @@ export async function removeBackground(imageUrl: string): Promise<string> {
   });
 
   if (!response.ok) {
+    let detail = ''
+    try {
+      const body = await response.json() as { errors?: Array<{ title: string }> }
+      detail = body.errors?.map(e => e.title).join(', ') ?? ''
+    } catch { /* ignore parse errors */ }
     throw new Error(
-      `remove.bg API error: ${response.status} ${response.statusText}`,
-    );
+      `remove.bg API error: ${response.status}${detail ? ` — ${detail}` : ''}`,
+    )
   }
 
   // Convert the binary PNG response into a same-origin blob URL

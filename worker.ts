@@ -113,7 +113,18 @@ async function proxyRemoveBg(request: Request, apiKey: string): Promise<Response
   const imageFile = incomingForm.get('image_file')
 
   if (typeof imageUrl === 'string') {
-    outgoingForm.append('image_url', imageUrl)
+    // Fetch the image server-side so remove.bg receives a binary file upload.
+    // Sending image_url directly fails when the host (e.g. storage.googleapis.com)
+    // restricts external fetches — remove.bg returns 503/400 in those cases.
+    const imgResponse = await fetch(imageUrl)
+    if (!imgResponse.ok) {
+      return new Response(
+        JSON.stringify({ error: `Failed to fetch source image: ${imgResponse.status}` }),
+        { status: 502, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    const imgBlob = await imgResponse.blob()
+    outgoingForm.append('image_file', imgBlob, 'image.png')
   } else if (imageFile != null && typeof imageFile !== 'string') {
     outgoingForm.append('image_file', imageFile as Blob, 'image.png')
   } else {
