@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
+    "@imgly/background-removal": "^1.7.0",
     "html-to-image": "^1.11.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

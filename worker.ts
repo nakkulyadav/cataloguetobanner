@@ -7,7 +7,6 @@
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> }
-  REMOVEBG_API_KEY: string
 }
 
 export default {
@@ -16,10 +15,6 @@ export default {
 
     if (url.pathname.startsWith('/api/catalog')) {
       return proxyCatalog(request, url)
-    }
-
-    if (url.pathname === '/api/removebg' && request.method === 'POST') {
-      return proxyRemoveBg(request, env.REMOVEBG_API_KEY)
     }
 
     if (url.pathname === '/api/image' && request.method === 'GET') {
@@ -98,56 +93,3 @@ async function proxyImage(url: URL): Promise<Response> {
   return new Response(response.body, { status: response.status, headers })
 }
 
-async function proxyRemoveBg(request: Request, apiKey: string): Promise<Response> {
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: 'REMOVEBG_API_KEY is not configured on the server' }),
-      { status: 503, headers: { 'content-type': 'application/json' } },
-    )
-  }
-
-  const incomingForm = await request.formData()
-  const outgoingForm = new FormData()
-
-  const imageUrl = incomingForm.get('image_url')
-  const imageFile = incomingForm.get('image_file')
-
-  if (typeof imageUrl === 'string') {
-    // Fetch the image server-side so remove.bg receives a binary file upload.
-    // Sending image_url directly fails when the host (e.g. storage.googleapis.com)
-    // restricts external fetches — remove.bg returns 503/400 in those cases.
-    const imgResponse = await fetch(imageUrl)
-    if (!imgResponse.ok) {
-      return new Response(
-        JSON.stringify({ error: `Failed to fetch source image: ${imgResponse.status}` }),
-        { status: 502, headers: { 'content-type': 'application/json' } },
-      )
-    }
-    const imgBlob = await imgResponse.blob()
-    outgoingForm.append('image_file', imgBlob, 'image.png')
-  } else if (imageFile != null && typeof imageFile !== 'string') {
-    outgoingForm.append('image_file', imageFile as Blob, 'image.png')
-  } else {
-    return new Response(
-      JSON.stringify({ error: 'Missing image_url or image_file in request' }),
-      { status: 400, headers: { 'content-type': 'application/json' } },
-    )
-  }
-
-  outgoingForm.append('size', 'auto')
-
-  const response = await fetch('https://api.remove.bg/v1.0/removebg', {
-    method: 'POST',
-    headers: { 'X-Api-Key': apiKey },
-    body: outgoingForm,
-  })
-
-  // Forward the binary PNG (or error body) straight back to the client
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: {
-      'content-type': response.headers.get('content-type') ?? 'application/octet-stream',
-    },
-  })
-}

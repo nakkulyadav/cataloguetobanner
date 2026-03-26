@@ -53,7 +53,7 @@ export const HEADING_COMPACT = {
   fontWeight: 600,
   lineHeight: 1.2,
   maxLines: 2,
-  maxFontSize: 26,
+  maxFontSize: 28,
   minFontSize: 20,
   fontSizeStep: 1,
 };
@@ -66,7 +66,7 @@ export const SUBHEADING = {
 
 // --- Subheading Text (independent element between heading and price) ---
 export const SUBHEADING_TEXT = {
-  fontSize: 24,
+  fontSize: 26,
   fontWeight: 400,
   color: '#000000',
   fontFamily: '"Inter", sans-serif',

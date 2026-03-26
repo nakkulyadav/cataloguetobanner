@@ -1,67 +1,46 @@
 /**
- * Service for removing image backgrounds via the remove.bg API.
+ * Service for removing image backgrounds using @imgly/background-removal.
  *
- * Sends an image URL to remove.bg and returns a same-origin blob URL
- * containing the transparent PNG result. Blob URLs work natively with
- * html-to-image for banner export (no CORS issues).
+ * Runs entirely in the browser via WebAssembly + ONNX — no API key or
+ * external service required. The ONNX model (~170 MB) is downloaded from
+ * the imgly CDN on first use and cached by the browser thereafter.
  *
- * API docs: https://www.remove.bg/api
+ * For remote image URLs the image is first fetched through our /api/image
+ * proxy (production) or directly (dev) to avoid CORS issues with external
+ * hosts like storage.googleapis.com.
  */
 
-const REMOVEBG_ENDPOINT = '/api/removebg';
+import { removeBackground as imglyRemoveBackground } from '@imgly/background-removal'
 
-/**
- * Returns true when the URL is a local blob or data URI that
- * remove.bg's servers cannot fetch remotely.
- */
 function isLocalUrl(url: string): boolean {
-  return url.startsWith('blob:') || url.startsWith('data:');
+  return url.startsWith('blob:') || url.startsWith('data:')
 }
 
 /**
- * Removes the background from an image via the remove.bg API.
+ * Removes the background from an image.
  *
- * Local images (blob/data URIs from uploads or clipboard pastes) are
- * sent as `image_file` (binary upload). Remote URLs are sent as
- * `image_url` so remove.bg fetches them directly — this avoids CORS
- * errors that block browser-side `fetch()` on cross-origin image hosts.
- *
- * @param imageUrl — URL of the image to process (public URL, blob URL, or data URI).
- * @returns A same-origin blob URL (`blob:...`) pointing to the
- *          transparent PNG. Caller is responsible for revoking
- *          the blob URL via `URL.revokeObjectURL()` when done.
- * @throws If the request fails or the response is not OK (includes status + statusText).
+ * @param imageUrl — Public URL, blob URL, or data URI of the image to process.
+ * @returns A same-origin blob URL (`blob:...`) pointing to the transparent PNG.
+ *          Caller is responsible for revoking it via `URL.revokeObjectURL()`.
+ * @throws If the image cannot be fetched or the model fails to process it.
  */
 export async function removeBackground(imageUrl: string): Promise<string> {
-  const formData = new FormData();
+  let source: Blob
 
   if (isLocalUrl(imageUrl)) {
-    // Local blob/data URI — fetch the binary locally and send as file upload
-    const localResponse = await fetch(imageUrl);
-    const imageBlob = await localResponse.blob();
-    formData.append('image_file', imageBlob, 'image.png');
+    // Local blob/data URI — fetch the binary locally
+    const response = await fetch(imageUrl)
+    source = await response.blob()
   } else {
-    // Remote URL — Worker forwards image_url to remove.bg directly
-    formData.append('image_url', imageUrl);
+    // Remote URL — fetch through proxy in prod to avoid CORS; directly in dev
+    const fetchUrl = import.meta.env.DEV
+      ? imageUrl
+      : `/api/image?url=${encodeURIComponent(imageUrl)}`
+    const response = await fetch(fetchUrl)
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`)
+    source = await response.blob()
   }
 
-  const response = await fetch(REMOVEBG_ENDPOINT, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    let detail = ''
-    try {
-      const body = await response.json() as { errors?: Array<{ title: string }> }
-      detail = body.errors?.map(e => e.title).join(', ') ?? ''
-    } catch { /* ignore parse errors */ }
-    throw new Error(
-      `remove.bg API error: ${response.status}${detail ? ` — ${detail}` : ''}`,
-    )
-  }
-
-  // Convert the binary PNG response into a same-origin blob URL
-  const blob = await response.blob();
-  return URL.createObjectURL(blob);
+  const resultBlob = await imglyRemoveBackground(source)
+  return URL.createObjectURL(resultBlob)
 }
