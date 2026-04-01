@@ -1,24 +1,6 @@
 # Feature Implementation Plan
 
-**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE ✅`
-
-### IC — Image Clamp (left-edge barrier on zoom)
-- [x] IC-1: `constants/bannerTemplate.ts` — add `IMAGE_LEFT_BARRIER`
-- [x] IC-2: `components/BannerPreview/BannerPreview.tsx` — clamp `left` to keep left edge ≥ barrier
-- [x] IC-3: `BannerPreview.test.tsx` — 4 tests: no-clamp, active-clamp ×2, property invariant (137 passing)
-
-### ZM — Image Zoom Sliders
-- [x] ZM-1: `types/index.ts` — add `logoScale`, `productImageScale` to `BannerState`
-- [x] ZM-2: `useBannerState.tsx` — state + setters + reset on `selectProduct`
-- [x] ZM-3: `BannerControls.tsx` — `ZoomSlider` sub-component + new props
-- [x] ZM-4: `BannerPreview.tsx` — apply `transform: scale()` to logo + product image
-- [x] ZM-5: `App.tsx` — wire new state fields + props
-- [x] ZM-6: Tests — `BannerControls`, `useBannerState`
-
-### QS-26 ✅ Fix quantity sticker showing "1 unit" for multi-pack products
-- Suppress ONDC generic placeholder `{ unit:"unit", value:"1" }` in `catalogueParser.ts`
-- Fallback: extract "Pack of N" via regex from product name / shortDesc
-- 8 new tests covering suppression, regex extraction, case insensitivity, priority order
+**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE | SB-1–SB-17 DONE | RB-1–RB-5 DONE | BW-1–BW-5 DONE ✅ | QD-1–QD-4 DONE ✅ | BL-1–BL-5 DONE ✅ | ES-1–ES-8 DONE ✅ | IT-1–IT-25 DONE ✅ | IT-26–IT-30 Manual TODO`
 
 ## TLDR
 Build a client-side React app that lets Digihaat employees search products from a JSON catalogue, customize banner elements (background, CTA, offer badge), preview a 712×322px banner in real-time, and export it as PNG/JPG/WEBP. Dark theme modern dashboard UI. No backend — catalogue is a static JSON file.
@@ -1880,3 +1862,339 @@ Adds two input fields at the top of the sidebar for pasting a `provider_unique_i
 - [x] ✅ QS-23: Render test `BannerPreview`: sticker visible when `showQuantitySticker=true` + text set
 - [x] ✅ QS-24: Render test `BannerPreview`: sticker absent when `showQuantitySticker=false`
 - [x] ✅ QS-25: Render test `BannerControls`: toggle and text field render; interactions fire correct callbacks
+
+### IC — Image Clamp (left-edge barrier on zoom)
+- [x] IC-1: `constants/bannerTemplate.ts` — add `IMAGE_LEFT_BARRIER`
+- [x] IC-2: `components/BannerPreview/BannerPreview.tsx` — clamp `left` to keep left edge ≥ barrier
+- [x] IC-3: `BannerPreview.test.tsx` — 4 tests: no-clamp, active-clamp ×2, property invariant (137 passing)
+
+### ZM — Image Zoom Sliders
+- [x] ZM-1: `types/index.ts` — add `logoScale`, `productImageScale` to `BannerState`
+- [x] ZM-2: `useBannerState.tsx` — state + setters + reset on `selectProduct`
+- [x] ZM-3: `BannerControls.tsx` — `ZoomSlider` sub-component + new props
+- [x] ZM-4: `BannerPreview.tsx` — apply `transform: scale()` to logo + product image
+- [x] ZM-5: `App.tsx` — wire new state fields + props
+- [x] ZM-6: Tests — `BannerControls`, `useBannerState`
+
+### QS-26 ✅ Fix quantity sticker showing "1 unit" for multi-pack products
+- Suppress ONDC generic placeholder `{ unit:"unit", value:"1" }` in `catalogueParser.ts`
+- Fallback: extract "Pack of N" via regex from product name / shortDesc
+- 8 new tests covering suppression, regex extraction, case insensitivity, priority order
+
+
+### SB — Scheduled Banners (Google Sheets date-based batch generation)
+
+**Goal:** User picks a date → app fetches a shared public Google Sheet → filters rows for that date (team=bazaar, page=Banner) → bulk-generates all banners simultaneously, each with its own export panel.
+
+**Sheet ID:** `17c4n6socMBDYbssb6L1jG-rSAVJ63uXB0XsOuG_jHdE`
+**Fetch URL:** `https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:json` (public, no auth, CORS-safe)
+
+#### Phase 1 — Types
+- [x] SB-1: `types/index.ts` — add `SheetRow` (`date`, `team`, `page`, `offerCallout`, `comments`) and `ScheduledBannerEntry` (`sheetRow`, `bannerState`, `status: 'loading'|'ready'|'error'`, `error?`)
+
+#### Phase 2 — Sheets Service
+- [x] SB-2: `services/sheetsService.ts` — `fetchSheetRows()`: fetch gviz/tq endpoint, strip JSONP wrapper (`google.visualization.Query.setResponse(...)`) before `JSON.parse`, map columns to `SheetRow[]`
+- [x] SB-3: `services/sheetsService.ts` — `filterRowsForDate(rows, date)`: filter by `Date` column matching selected date (MM/DD/YYYY), `Team` = `"bazaar"` (case-insensitive), `Page` column = `"Banner"`
+- [x] SB-4: `services/sheetsService.ts` — `extractProductUrl(offerCallout)`: regex for first `https://digihaat.in/en/product?...` URL within the multiline Offer callout string
+- [x] SB-5: `services/sheetsService.ts` — `extractPrice(offerCallout)`: regex for first numeric sequence (strip commas), prefix `₹` — e.g. `"Our price - 1,299 + Free delivery"` → `"₹1299"`
+- [x] SB-6: `services/sheetsService.ts` — `parseComments(comments)`: extract text after `"Heading:"` and `"Subheading:"` labels (case-insensitive, trim); return `{ heading, subheading }` with empty string fallback
+
+#### Phase 3 — Hook
+- [x] SB-7: `hooks/useScheduledBanners.ts` — `selectedDate` state + `setDate` handler; on date change call `fetchSheetRows` + `filterRowsForDate`, store filtered rows
+- [x] SB-8: `hooks/useScheduledBanners.ts` — for each filtered row: call `lookupByUrl(extractProductUrl(row.offerCallout))`, then merge price/heading/subheading overrides into the resulting `BannerState`; store as `ScheduledBannerEntry[]`
+- [x] SB-9: `hooks/useScheduledBanners.ts` — per-banner `status` and `error` tracking; sheet-level `isFetching` and `fetchError` for the initial load
+
+#### Phase 4 — Export Panel refactor
+- [x] SB-10: `components/ExportPanel/ExportPanel.tsx` — accept an optional `bannerRef` prop; when provided use it instead of the global ref — allows each banner card to have its own scoped export panel
+
+#### Phase 5 — UI Components
+- [x] SB-11: `components/DateSchedule/DatePicker.tsx` — date input (`<input type="date">`) styled to match dark theme; formats selected value as MM/DD/YYYY for the sheet filter
+- [x] SB-12: `components/DateSchedule/ScheduledBannerCard.tsx` — renders a single `BannerPreview` (with its own `forwardRef`) + a "Download" button that toggles an inline `ExportPanel` scoped to this card’s ref; shows loading spinner and error state per card
+- [x] SB-13: `components/DateSchedule/ScheduledBannersGrid.tsx` — header with `DatePicker` + sheet-level loading/error; scrollable grid of `ScheduledBannerCard` components; empty state when no rows match
+
+#### Phase 6 — App Integration
+- [x] SB-14: `App.tsx` — add “Scheduled” tab alongside the existing single-product flow; render `ScheduledBannersGrid` when active; tab state is local (no URL routing needed)
+
+#### Phase 7 — Tests
+- [x] SB-15: `services/__tests__/sheetsService.test.ts` — unit tests: JSONP stripping, date/team/page filtering, URL extraction (multiline strings), price extraction (with commas, no commas, missing), heading/subheading parsing (present, missing, mixed case)
+- [x] SB-16: `hooks/__tests__/useScheduledBanners.test.ts` — date change triggers fetch + filter; per-banner loading → ready → override merge flow; error propagation (sheet fetch fail, lookup fail)
+- [x] SB-17: `components/__tests__/ScheduledBanners.test.tsx` — date picker interaction, banner card loading/error/ready render states, download button opens export panel
+
+---
+
+## Feature: Background Removal — Web Worker Offload (BW)
+
+**Summary:** Move `@imgly/background-removal` WASM/ONNX inference off the main thread into a dedicated Web Worker so the browser never shows "page is unresponsive" during background removal. Applies to both builder mode and scheduled mode.
+
+#### Phase 1 — Worker setup
+- [x] ✅ BW-1: Create `src/workers/backgroundRemoval.worker.ts` — listens for a `{ blob: Blob }` message, calls `imglyRemoveBackground(blob)`, posts back `{ result: Blob }` on success or `{ error: string }` on failure
+- [x] ✅ BW-2: `vite.config.ts` — confirm worker bundling works (Vite supports `new Worker(new URL('../workers/backgroundRemoval.worker.ts', import.meta.url))` with `type: 'module'`); add `optimizeDeps.exclude` for `@imgly/background-removal` and `worker: { format: 'es' }`
+
+#### Phase 2 — Service update
+- [x] ✅ BW-3: `src/services/removeBackgroundService.ts` — replace inline `imglyRemoveBackground(source)` call with a Worker invocation; wraps in a Promise that resolves/rejects on the worker's `message`/`onerror` events; terminates worker after each call to free WASM memory
+- [x] ✅ BW-4: Verified: `@imgly/background-removal` resolves ONNX model URLs relative to `import.meta.url` at runtime; inside a module Worker this resolves to the CDN correctly — no explicit `publicPath` config needed
+
+#### Phase 3 — Tests
+- [x] ✅ BW-5: `src/services/__tests__/removeBackgroundService.test.ts` — fully rewritten; mocks `Worker` globally via `vi.stubGlobal`; 14 tests covering proxy routing, local URL handling, worker lifecycle (postMessage, terminate, fresh instance per call), and all error paths (worker error message, onerror event, empty response, network failure)
+
+#### Edge Cases
+- Concurrent calls while worker is busy → each call creates its own short-lived worker instance (terminate after done), so concurrency is safe at the cost of memory; document this
+- Worker fails to load WASM (CDN unreachable) → error propagates to caller; caller shows log entry as before
+- Date change mid-inference in scheduled mode → existing `removeBgAbortRef` flag in `useScheduledBanners` still stops the loop after the current worker call resolves (WASM cannot be cancelled mid-inference even in a worker)
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `src/services/removeBackgroundService.ts` | Replace inline WASM call with Worker invocation |
+| `vite.config.ts` | Confirm/add worker bundling config |
+
+#### New Files
+
+| File | Purpose |
+|---|---|
+| `src/workers/backgroundRemoval.worker.ts` | Web Worker that runs WASM inference off the main thread |
+| `src/services/__tests__/removeBackgroundService.test.ts` | Unit tests for Worker-based service |
+
+#### Files NOT Modified
+
+- `src/hooks/useScheduledBanners.ts` — unchanged; calls `removeBackground()` service which is now worker-backed transparently
+- `src/App.tsx` — unchanged; `handleRemoveBackground` calls the same service
+
+---
+
+## Fix: Quantity Sticker Default ON (QD)
+
+**Summary:** `showQuantitySticker` defaults to `false` in two places. Change both to `true` so the sticker is visible by default when a product with quantity data is selected.
+
+#### Phase 1 — State defaults
+- [x] QD-1: `src/hooks/useBannerState.tsx` — `useState(false)` → `useState(true)` for `showQuantitySticker` (line 55)
+- [x] QD-2: `src/hooks/useScheduledBanners.ts` — `showQuantitySticker: false` → `true` in `defaultBannerState()` (line 45)
+
+#### Phase 2 — Tests
+- [x] QD-3: `src/hooks/__tests__/useBannerState.test.ts` — update any assertion that expects `showQuantitySticker` to be `false` on init → expect `true`
+- [x] QD-4: `src/hooks/__tests__/useScheduledBanners.test.ts` — update assertions on `defaultBannerState` that check `showQuantitySticker` → expect `true`
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `src/hooks/useBannerState.tsx` | `showQuantitySticker` initial value: `false` → `true` |
+| `src/hooks/useScheduledBanners.ts` | `defaultBannerState()` `showQuantitySticker`: `false` → `true` |
+| `src/hooks/__tests__/useBannerState.test.ts` | Update default-state assertions |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Update default-state assertions |
+
+---
+
+## Fix: Remove All Backgrounds — Brand Logo Support (BL)
+
+**Summary:** `removeAllBackgrounds()` in scheduled mode only processes the product image. It must also remove the brand logo background to match the behaviour of the builder mode's `handleRemoveBackground`.
+
+#### Phase 1 — Hook update
+- [x] BL-1: `src/hooks/useScheduledBanners.ts` — in `removeAllBackgrounds()`, after processing the product image for an entry, also resolve the logo URL: `entry.bannerState!.brandLogoOverride ?? entry.bannerState!.selectedProduct?.provider.brandLogo`
+- [x] BL-2: Call `removeBackground(logoUrl)` sequentially (after product image, before moving to next entry); on success update `bannerState.brandLogoOverride` with the result blob URL and revoke the previous logo blob if it starts with `blob:`
+- [x] BL-3: On logo removal failure, populate a new `logoRemovalError` field (or reuse `bgRemovalError` with a combined message) — choose the simpler option: append to `bgRemovalError` as `"Product bg: ok | Logo bg: <error>"`; status still transitions to `'done'` so the user isn't blocked
+
+#### Phase 2 — Type update (if needed)
+- [x] BL-4: `src/types/index.ts` — if a separate logo error field is added, extend `ScheduledBannerEntry` accordingly; otherwise no type change needed
+
+#### Phase 3 — Tests
+- [x] BL-5: `src/hooks/__tests__/useScheduledBanners.test.ts` — assert that after `removeAllBackgrounds()` completes, both `bannerState.productImageOverride` and `bannerState.brandLogoOverride` are updated with the expected blob URLs; assert logo blob URL is revoked when replaced
+
+#### Edge Cases
+- Entry has no brand logo → skip logo step silently, still mark `bgRemovalStatus: 'done'`
+- Product image removal succeeds but logo removal fails → entry marked `'done'` with error note in `bgRemovalError`; product image override is still applied
+- Both product image and logo already processed (re-run) → `bgRemovalStatus` is no longer `'idle'`, so entry is skipped entirely (existing guard)
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `src/hooks/useScheduledBanners.ts` | `removeAllBackgrounds()`: add sequential logo removal per entry |
+| `src/types/index.ts` | Extend `ScheduledBannerEntry` if separate logo error field is added |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Add assertions for logo override update |
+
+#### Files NOT Modified
+
+- `src/components/DateSchedule/ScheduledBannerCard.tsx` — `BgRemovalBadge` uses `bgRemovalStatus` which is unchanged
+- `src/services/removeBackgroundService.ts` — called as-is for the logo URL
+
+---
+
+## Feature: Edit → Save for Scheduled Banners (ES)
+
+**Summary:** When a user clicks Edit on a scheduled banner card, the button changes to "Save". Clicking Save commits the current BannerContext state back to the entry's `bannerState` in the `entries` array, persisting all edits.
+
+#### Phase 1 — Hook: add updateEntryState
+- [x] ES-1: `src/hooks/useScheduledBanners.ts` — add `updateEntryState(id: string, state: BannerState): void` using `syncedSetEntries`; patches only the matching entry's `bannerState` without touching any other field; expose on the hook return type `UseScheduledBannersReturn`
+
+#### Phase 2 — App wiring
+- [x] ES-2: `src/App.tsx` — add `handleSaveScheduledEntry` callback: calls `scheduledBanners.updateEntryState(editingScheduledId!, bannerState)` then sets `editingScheduledId(null)`
+- [x] ES-3: `src/App.tsx` — pass `onSaveEntry={handleSaveScheduledEntry}` down to `ScheduledBannersGrid`
+
+#### Phase 3 — Component updates
+- [x] ES-4: `src/components/DateSchedule/ScheduledBannersGrid.tsx` — accept `onSaveEntry?: (id: string) => void` prop; thread it into each `ScheduledBannerCard` as `onSave={() => onSaveEntry?.(entry.id)}`
+- [x] ES-5: `src/components/DateSchedule/ScheduledBannerCard.tsx` — add `onSave?: () => void` to `ScheduledBannerCardProps`; when `isEditing === true`, render button label as "Save" and call `onSave()` on click instead of `onEdit()`; keep the active accent style on the button while in edit/save state
+
+#### Phase 4 — Tests
+- [x] ES-6: `src/hooks/__tests__/useScheduledBanners.test.ts` — assert `updateEntryState(id, newState)` updates only the target entry's `bannerState`; assert other entries are unchanged
+- [x] ES-7: `src/components/__tests__/ScheduledBanners.test.tsx` — render card with `isEditing=true`; assert button label is "Save"; simulate click; assert `onSave` is called
+- [x] ES-8: `src/components/__tests__/ScheduledBanners.test.tsx` — render card with `isEditing=false`; assert button label is "Edit"; simulate click; assert `onEdit` is called and `onSave` is not
+
+#### Edge Cases
+- User clicks Edit on a second banner without saving the first → `handleEditScheduledEntry` overwrites BannerContext with the new entry's state; first entry's edits are silently discarded (no auto-save, no prompt — Edit→Save flow makes intent explicit)
+- User changes the date while editing → `onDateChange` in `App.tsx` already calls `setEditingScheduledId(null)`, discarding unsaved edits; correct behaviour
+- Entry has no `bannerState` (error/loading) → Edit button is not rendered (`onEdit` is only passed for `status === 'ready'` entries), so `updateEntryState` can never be called on a null state
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `src/hooks/useScheduledBanners.ts` | Add `updateEntryState` + `UseScheduledBannersReturn` type update |
+| `src/App.tsx` | Add `handleSaveScheduledEntry`; pass `onSaveEntry` to grid |
+| `src/components/DateSchedule/ScheduledBannersGrid.tsx` | Accept + thread `onSaveEntry` prop |
+| `src/components/DateSchedule/ScheduledBannerCard.tsx` | Add `onSave` prop; Edit→Save button label toggle |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Tests for `updateEntryState` |
+| `src/components/__tests__/ScheduledBanners.test.tsx` | Tests for Save button label + callback |
+
+#### Files NOT Modified
+
+- `src/hooks/useBannerState.tsx` — BannerContext is read-only from the scheduled side; `loadState` and individual setters still used for editing
+- `src/components/BannerPreview/BannerPreview.tsx` — unchanged; renders whatever `BannerState` it receives
+- `src/services/` — no service changes needed
+
+---
+
+## Feature: Image Toggle After Background Removal (IT)
+
+**Summary:** After background removal runs, users cannot compare or revert to the original image. Add a per-image toggle next to the product image field and brand logo field in builder mode, and a per-card toggle on each scheduled banner card, so users can freely switch between the bg-removed version and the original without re-running removal.
+
+---
+
+#### Phase 1 — Types
+
+- [x] IT-1: `src/types/index.ts` — add three new fields to `ScheduledBannerEntry`:
+  - `bgRemovedProductImageUrl: string | null` — blob URL of the bg-removed product image (set by `removeAllBackgrounds`; previously written to `bannerState.productImageOverride`)
+  - `bgRemovedLogoUrl: string | null` — blob URL of the bg-removed brand logo (previously written to `bannerState.brandLogoOverride`)
+  - `showBgRemoved: boolean` — toggle state; `true` = show bg-removed version, `false` = show original (defaults to `true` so the banner immediately reflects bg removal when done)
+
+---
+
+#### Phase 2 — Hook: useScheduledBanners
+
+- [x] IT-2: `src/hooks/useScheduledBanners.ts` — initialise new fields in `initialEntries` construction inside `setDate`: `bgRemovedProductImageUrl: null`, `bgRemovedLogoUrl: null`, `showBgRemoved: true`
+- [x] IT-3: `src/hooks/useScheduledBanners.ts` — in `removeAllBackgrounds()`, store processed blob URLs in the new entry fields **instead of** `bannerState.productImageOverride` / `bannerState.brandLogoOverride`. Revoke the previous blob when replacing (`old?.startsWith('blob:') && URL.revokeObjectURL(old)`). `bannerState` is left completely untouched by bg removal.
+- [x] IT-4: `src/hooks/useScheduledBanners.ts` — add `toggleEntryBgRemoved(id: string): void` using `syncedSetEntries`; flips `showBgRemoved` on the matching entry only; expose on `UseScheduledBannersReturn`
+- [x] IT-5: `src/hooks/useScheduledBanners.ts` — in `setDate`, before clearing entries (`setEntries([])`), loop over `entriesRef.current` and revoke any blob URLs held in `bgRemovedProductImageUrl` and `bgRemovedLogoUrl` to prevent leaks on date change
+
+---
+
+#### Phase 3 — Builder toggle state (App.tsx)
+
+- [x] IT-6: `src/App.tsx` — add two boolean flags: `showBgRemovedProduct` (default `false`) and `showBgRemovedLogo` (default `false`). In `handleRemoveBackground`, after `setBgRemovedProductUrl(result.value)` set `setShowBgRemovedProduct(true)`; after `setBgRemovedLogoUrl(result.value)` set `setShowBgRemovedLogo(true)`
+- [x] IT-7: `src/App.tsx` — reset `showBgRemovedProduct` to `false` in the `useEffect` that resets `bgRemovedProductUrl` on product change and on product-image-override change; reset `showBgRemovedLogo` to `false` in the `useEffect` that resets `bgRemovedLogoUrl` on brand-logo-override change and on product change
+- [x] IT-8: `src/App.tsx` — update the `bannerState` useMemo to use the toggle flags:
+  - Product image: `imageUrl: (showBgRemovedProduct && bgRemovedProductUrl) ? bgRemovedProductUrl : selectedProduct.imageUrl`
+  - Brand logo: `brandLogoOverride: (showBgRemovedLogo && bgRemovedLogoUrl) ? bgRemovedLogoUrl : brandLogoOverride`
+- [x] IT-9: `src/App.tsx` — pass four new props to `<BannerControls>`: `hasBgRemovedProduct={!!bgRemovedProductUrl}`, `showBgRemovedProduct`, `onToggleBgRemovedProduct={() => setShowBgRemovedProduct(p => !p)}`, `hasBgRemovedLogo={!!bgRemovedLogoUrl}`, `showBgRemovedLogo`, `onToggleBgRemovedLogo={() => setShowBgRemovedLogo(p => !p)}`
+
+---
+
+#### Phase 4 — BannerControls: toggle UI
+
+- [x] IT-10: `src/components/BannerControls/BannerControls.tsx` — add six new props to `BannerControlsProps`:
+  - `hasBgRemovedProduct: boolean`
+  - `showBgRemovedProduct: boolean`
+  - `onToggleBgRemovedProduct: () => void`
+  - `hasBgRemovedLogo: boolean`
+  - `showBgRemovedLogo: boolean`
+  - `onToggleBgRemovedLogo: () => void`
+- [x] IT-11: `src/components/BannerControls/BannerControls.tsx` — in the **Product Image** section, when `hasBgRemovedProduct === true`, render a compact pill toggle beside the Upload/Paste controls showing the active version ("Original" / "BG Removed"); clicking calls `onToggleBgRemovedProduct`
+- [x] IT-12: `src/components/BannerControls/BannerControls.tsx` — in the **Brand Logo** section, apply the same toggle pattern using the logo-specific props
+
+---
+
+#### Phase 5 — ScheduledBannerCard: effective display state + toggle UI
+
+- [x] IT-13: `src/components/DateSchedule/ScheduledBannerCard.tsx` — add `onToggleBgRemoved?: () => void` prop to `ScheduledBannerCardProps`
+- [x] IT-14: `src/components/DateSchedule/ScheduledBannerCard.tsx` — compute `effectiveDisplayState` from `displayState` (which is already `overrideBannerState ?? entry.bannerState`): when `entry.showBgRemoved && entry.bgRemovedProductImageUrl`, inject the bg-removed product image (`selectedProduct.imageUrl` override); when `entry.showBgRemoved && entry.bgRemovedLogoUrl`, inject it as `brandLogoOverride`. Use `effectiveDisplayState` for both `<BannerPreview>` and the export capture, so exported banners always reflect the currently visible image
+- [x] IT-15: `src/components/DateSchedule/ScheduledBannerCard.tsx` — in the action row, when `bgRemovalStatus === 'done'`, render a compact pill toggle next to the `BgRemovalBadge` showing "Original" / "BG Removed" (reflects `entry.showBgRemoved`); clicking calls `onToggleBgRemoved`
+
+---
+
+#### Phase 6 — ScheduledBannersGrid: thread toggle prop
+
+- [x] IT-16: `src/components/DateSchedule/ScheduledBannersGrid.tsx` — accept `onToggleEntryBgRemoved?: (id: string) => void` prop; pass to each `<ScheduledBannerCard>` as `onToggleBgRemoved={() => onToggleEntryBgRemoved?.(entry.id)}`
+
+---
+
+#### Phase 7 — App.tsx: wire scheduled toggle
+
+- [x] IT-17: `src/App.tsx` — destructure `toggleEntryBgRemoved` from `scheduledBanners`; pass `onToggleEntryBgRemoved={scheduledBanners.toggleEntryBgRemoved}` to `<ScheduledBannersGrid>`
+
+---
+
+#### Phase 8 — Tests
+
+- [x] IT-18: `src/hooks/__tests__/useScheduledBanners.test.ts` — after `removeAllBackgrounds()` completes, assert `bgRemovedProductImageUrl` and `bgRemovedLogoUrl` are set to the expected blob URLs **and** `bannerState.productImageOverride` / `bannerState.brandLogoOverride` remain `null` (unchanged from initial state); assert old blob URLs are revoked when replaced
+- [x] IT-19: `src/hooks/__tests__/useScheduledBanners.test.ts` — assert `toggleEntryBgRemoved(id)` flips `showBgRemoved` on the target entry; assert other entries are unaffected; assert calling twice returns to original value
+- [x] IT-20: `src/hooks/__tests__/useScheduledBanners.test.ts` — assert that changing the date revokes blob URLs from `bgRemovedProductImageUrl` and `bgRemovedLogoUrl` on existing entries before clearing
+- [x] IT-21: `src/components/__tests__/ScheduledBanners.test.tsx` — render card with `bgRemovalStatus === 'done'`; assert toggle button is present; simulate click; assert `onToggleBgRemoved` is called; assert toggle is absent when `bgRemovalStatus === 'idle'` or `'removing'`
+- [x] IT-22: `src/components/__tests__/ScheduledBanners.test.tsx` — render card with `showBgRemoved: true` and `bgRemovedProductImageUrl` set; assert `BannerPreview` receives the bg-removed image URL; render with `showBgRemoved: false`; assert `BannerPreview` receives the original catalogue image URL
+- [x] IT-23: `src/components/BannerControls/__tests__/BannerControls.test.tsx` — when `hasBgRemovedProduct === true`, assert the product image toggle button renders; simulate click; assert `onToggleBgRemovedProduct` is called; assert button is absent when `hasBgRemovedProduct === false`; repeat assertions for logo toggle
+
+---
+
+#### Phase 9 — Build & verify
+
+- [x] IT-24: `npm run build` — TypeScript compiles clean, no errors ✅
+- [x] IT-25: `npm run test:run` — all 227 tests pass ✅
+- [ ] IT-26: Manual — builder mode: remove bg → toggle appears next to product image → clicking switches to original → clicking again restores bg-removed → switch product → toggle disappears
+- [ ] IT-27: Manual — builder mode: remove bg → toggle appears next to logo → switches independently of product image toggle
+- [ ] IT-28: Manual — builder mode: upload new product image after bg removal → bg-removed toggle disappears (state reset)
+- [ ] IT-29: Manual — scheduled mode: remove all backgrounds → "BG Removed" pill toggle appears on each card → clicking shows original image → clicking again shows bg-removed → changing date clears all state cleanly
+- [ ] IT-30: Manual — scheduled mode: edit a banner while toggle is in "BG Removed" state → save → bg-removed image still displayed correctly (effective state re-injected after save)
+
+---
+
+#### Edge Cases
+
+| Scenario | Behavior |
+|---|---|
+| Builder: bg removal runs while `productImageOverride` (uploaded image) is active | `bgRemovedProductUrl` holds the processed upload; toggle switches between uploaded and processed versions (original catalogue image is NOT surfaced — toggle is scoped to the "current effective image" pair) |
+| Builder: user uploads a new image after bg removal | `useEffect` resets `bgRemovedProductUrl` and `showBgRemovedProduct` to `false`; toggle disappears |
+| Builder: bg removal fails for logo but succeeds for product | `bgRemovedProductUrl` is set and toggle appears for product image; logo toggle does not appear (`hasBgRemovedLogo` stays `false`) |
+| Scheduled: entry has no brand logo | Logo removal step is skipped; `bgRemovedLogoUrl` stays `null`; no logo toggle rendered |
+| Scheduled: product image removal succeeds, logo removal fails | `bgRemovedProductImageUrl` is set, `bgRemovedLogoUrl` stays `null`; only product image toggle is rendered; `bgRemovalStatus: 'done'` with error note in `bgRemovalError` (unchanged from BL-3) |
+| Scheduled: user is in edit mode when toggling | `effectiveDisplayState` is computed from `overrideBannerState` (live edit state) + entry's bg-removed fields; toggle correctly injects/removes bg-removed images on top of in-progress edits |
+| Scheduled: date changes while bg removal is in flight | `removeBgAbortRef` stops the loop; date change revokes already-stored blobs in `bgRemovedProductImageUrl` / `bgRemovedLogoUrl` before clearing entries |
+| Scheduled: `showBgRemoved: true` but `bgRemovedProductImageUrl` is `null` (removal not yet run) | `effectiveDisplayState` leaves `selectedProduct.imageUrl` untouched — no injection when blob URL is absent |
+| Scheduled: "Remove All Backgrounds" re-run after partial failure | Only `bgRemovalStatus === 'idle'` entries are processed; `'done'` and `'error'` entries are skipped (existing guard) |
+
+---
+
+#### New Files
+
+None — all changes are additions to existing files.
+
+#### Files Modified
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `bgRemovedProductImageUrl`, `bgRemovedLogoUrl`, `showBgRemoved` to `ScheduledBannerEntry` |
+| `src/hooks/useScheduledBanners.ts` | Initialise new fields; redirect bg-removed storage from `bannerState` to new fields; add `toggleEntryBgRemoved`; revoke blobs on date change; expose on `UseScheduledBannersReturn` |
+| `src/App.tsx` | Add `showBgRemovedProduct` / `showBgRemovedLogo` state; update `handleRemoveBackground` to set flags; update `bannerState` useMemo to respect flags; pass toggle props to `BannerControls`; pass `onToggleEntryBgRemoved` to `ScheduledBannersGrid` |
+| `src/components/BannerControls/BannerControls.tsx` | Add six new props; render pill toggle next to product image field and brand logo field when bg-removed URL is available |
+| `src/components/DateSchedule/ScheduledBannerCard.tsx` | Add `onToggleBgRemoved` prop; compute `effectiveDisplayState` with bg-removed injection; render toggle button when `bgRemovalStatus === 'done'` |
+| `src/components/DateSchedule/ScheduledBannersGrid.tsx` | Accept + thread `onToggleEntryBgRemoved` prop |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Tests for new field storage, toggle, and blob revocation on date change |
+| `src/components/__tests__/ScheduledBanners.test.tsx` | Tests for toggle button rendering and callback, effective display state |
+| `src/components/BannerControls/__tests__/BannerControls.test.tsx` | Tests for image toggle buttons in product and logo sections |
+
+#### Files NOT Modified
+
+- `src/hooks/useBannerState.tsx` — builder toggle flags live in `App.tsx` local state, not in the BannerContext
+- `src/components/BannerPreview/BannerPreview.tsx` — renders whatever `BannerState` it receives; no changes needed
+- `src/services/removeBackgroundService.ts` — called as-is; output routing changes only in the hook and `App.tsx`
+- `src/components/ExportPanel/ExportPanel.tsx` — unchanged; export uses the effective display state passed to `BannerPreview`
+- `src/constants/` — unchanged

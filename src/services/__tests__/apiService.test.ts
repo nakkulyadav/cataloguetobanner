@@ -22,6 +22,7 @@ describe('searchCatalog', () => {
   it('returns typed ApiPaginatedResponse on success', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 
@@ -35,6 +36,7 @@ describe('searchCatalog', () => {
   it('builds URL with bppId + domain params', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 
@@ -48,6 +50,7 @@ describe('searchCatalog', () => {
   it('builds URL with providerUniqueId param', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 
@@ -60,6 +63,7 @@ describe('searchCatalog', () => {
   it('includes search param when provided', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 
@@ -72,6 +76,7 @@ describe('searchCatalog', () => {
   it('includes page and pageSize params', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 
@@ -87,6 +92,8 @@ describe('searchCatalog', () => {
       ok: false,
       status: 500,
       statusText: 'Internal Server Error',
+      // Empty content-type so the plain HTTP error path is exercised (not the JSON proxy path)
+      headers: { get: vi.fn().mockReturnValue('') },
     })
 
     await expect(searchCatalog({ bppId: 'test' })).rejects.toThrow(
@@ -97,6 +104,7 @@ describe('searchCatalog', () => {
   it('passes AbortSignal to fetch', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 
@@ -110,6 +118,7 @@ describe('searchCatalog', () => {
   it('uses the correct base URL', async () => {
     ;(fetch as any).mockResolvedValueOnce({
       ok: true,
+      headers: { get: vi.fn().mockReturnValue('application/json') },
       json: () => Promise.resolve(mockResponse),
     })
 

@@ -24,11 +24,6 @@ export interface ParsedProduct {
   provider: ProviderDetails;
   /** Formatted prices from catalogue. Undefined when price data is missing/invalid. */
   price?: ProductPrice;
-  /**
-   * Package quantity from catalogue (e.g. { unit: "Pack", value: "5" }).
-   * Undefined when the catalogue item has no unitized measure data.
-   */
-  quantity?: { unit: string; value: string };
 }
 
 export interface ProductGroup {
@@ -201,15 +196,99 @@ export interface BannerState {
    * Uses CSS transform:scale() so the layout box remains fixed.
    */
   productImageScale: number;
-  /** Whether the quantity sticker is visible on the banner (default: false) */
-  showQuantitySticker: boolean;
+}
+
+// --- Scheduled Banners (Google Sheets integration) ---
+
+/**
+ * A single row parsed from the Digihaat promotions Google Sheet.
+ * Column names are mapped verbatim; empty cells become empty strings.
+ */
+export interface SheetRow {
+  /** MM/DD/YYYY — the promotion date from the "Date" column */
+  date: string;
+  /** Originating team, e.g. "bazaar" — from the "Team" column */
+  team: string;
+  /** Placement type, e.g. "Banner" — from the "Page Homepage/Food/Grocery etc" column */
+  page: string;
   /**
-   * Text displayed inside the quantity sticker.
-   * Auto-populated from catalogue as "{value} {unit}" (e.g. "5 Pack").
-   * null when no catalogue quantity data is present.
-   * Freely editable by the user.
+   * Raw text from the "Offer callout" column.
+   * Contains both a human-readable price string AND a digihaat.in product URL
+   * on separate lines, e.g.:
+   *   "Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?..."
    */
-  quantityStickerText: string | null;
+  offerCallout: string;
+  /**
+   * Raw text from the "Comments" column.
+   * Contains "Header: ..." and "Subheader: ..." labels on separate lines.
+   */
+  comments: string;
+}
+
+/**
+ * One entry in the scheduled banner batch for a selected date.
+ * Wraps the source sheet row plus the resolved BannerState (once loaded).
+ */
+export interface ScheduledBannerEntry {
+  /** Unique key for React list rendering — generated from row index */
+  id: string;
+  /** The originating sheet row */
+  sheetRow: SheetRow;
+  /** Lifecycle status of the async product lookup */
+  status: 'loading' | 'ready' | 'error';
+  /**
+   * Fully assembled banner state, available once status === 'ready'.
+   * Includes product data from the API merged with sheet overrides
+   * (price, heading, subheading).
+   *
+   * NOTE (IT-3): `removeAllBackgrounds()` no longer writes processed blob
+   * URLs into this object. Background-removed images live in the dedicated
+   * `bgRemovedProductImageUrl` and `bgRemovedLogoUrl` fields below so the
+   * user can toggle between versions without re-running WASM inference.
+   */
+  bannerState: BannerState | null;
+  /** Human-readable error message, set when status === 'error' */
+  error: string | null;
+  /**
+   * Lifecycle status of the background removal operation for this entry.
+   * Only meaningful when status === 'ready'.
+   *
+   *   idle     — not yet processed (initial state)
+   *   removing — currently running @imgly/background-removal
+   *   done     — completed; see bgRemovedProductImageUrl / bgRemovedLogoUrl
+   *   error    — failed; bgRemovalError holds the reason
+   */
+  bgRemovalStatus: 'idle' | 'removing' | 'done' | 'error';
+  /** Human-readable failure reason, set when bgRemovalStatus === 'error' */
+  bgRemovalError: string | null;
+  /**
+   * Blob URL of the background-removed product image produced by
+   * `removeAllBackgrounds()`. Stored here (not in bannerState) so the user
+   * can toggle between original and bg-removed without re-running WASM.
+   *
+   * `null` until background removal has run for this entry.
+   * Revoked and replaced if removal runs again; revoked on date change.
+   */
+  bgRemovedProductImageUrl: string | null;
+  /**
+   * Blob URL of the background-removed brand logo produced by
+   * `removeAllBackgrounds()`. Same lifecycle as bgRemovedProductImageUrl.
+   *
+   * `null` until background removal has run for this entry.
+   */
+  bgRemovedLogoUrl: string | null;
+  /**
+   * Controls whether the bg-removed product image is shown on this card.
+   * `true` injects bgRemovedProductImageUrl into the display state.
+   * Defaults to `true` so the banner immediately reflects bg removal.
+   */
+  showBgRemovedProduct: boolean;
+  /**
+   * Controls whether the bg-removed brand logo is shown on this card.
+   * `true` injects bgRemovedLogoUrl into the display state.
+   * Defaults to `true` so the banner immediately reflects bg removal.
+   */
+  showBgRemovedLogo: boolean;
 }
 
 // --- Logging ---

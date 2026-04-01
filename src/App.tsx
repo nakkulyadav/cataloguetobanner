@@ -4,10 +4,11 @@ import { useLogs } from '@/hooks/useLogs'
 import { useProviders } from '@/hooks/useProviders'
 import { useProviderProducts } from '@/hooks/useProviderProducts'
 import { useDirectLookup } from '@/hooks/useDirectLookup'
+import { useScheduledBanners } from '@/hooks/useScheduledBanners'
 import { exportBanner, generateFilename } from '@/services/exportService'
 import { removeBackground } from '@/services/removeBackgroundService'
 import type { ExportFormat } from '@/services/exportService'
-import type { BannerState, ApiProvider, ProductGroup, ParsedProduct } from '@/types'
+import type { BannerState, ApiProvider, ProductGroup, ParsedProduct, ScheduledBannerEntry } from '@/types'
 import BannerPreview from '@/components/BannerPreview/BannerPreview'
 import ProductSearch from '@/components/ProductSearch/ProductSearch'
 import ProviderSearch from '@/components/ProviderSearch/ProviderSearch'
@@ -15,10 +16,21 @@ import DirectLookup from '@/components/DirectLookup/DirectLookup'
 import BannerControls from '@/components/BannerControls/BannerControls'
 import ExportPanel from '@/components/ExportPanel/ExportPanel'
 import LogsPanel from '@/components/LogsPanel/LogsPanel'
+import ScheduledBannersGrid from '@/components/DateSchedule/ScheduledBannersGrid'
+import CalendarPicker from '@/components/DateSchedule/CalendarPicker'
+
+/** Top-level mode toggle: single product builder vs. date-based batch scheduler */
+type AppMode = 'builder' | 'scheduled'
 
 function App() {
   const bannerRef = useRef<HTMLDivElement>(null)
   const [isExporting, setIsExporting] = useState(false)
+
+  // --- Top-level mode: banner builder vs. scheduled banners ---
+  const [appMode, setAppMode] = useState<AppMode>('builder')
+
+  // Scheduled banners hook — manages sheet fetch + per-banner state
+  const scheduledBanners = useScheduledBanners()
 
   // --- Provider selection state (two-step browse flow) ---
   const [selectedBpp, setSelectedBpp] = useState<string | null>(null)
@@ -69,16 +81,28 @@ function App() {
     priceOverride,
     setPriceOverride,
     setSubheadingText,
-    showQuantitySticker,
-    quantityStickerText,
-    toggleQuantitySticker,
-    setQuantityStickerText,
     logoScale,
     productImageScale,
     setLogoScale,
     setProductImageScale,
+    loadState,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
+
+  // --- Scheduled banner editing ---
+  const [editingScheduledId, setEditingScheduledId] = useState<string | null>(null)
+  const editingScheduledEntry = editingScheduledId
+    ? scheduledBanners.entries.find(e => e.id === editingScheduledId) ?? null
+    : null
+
+  const handleEditScheduledEntry = useCallback(
+    (entry: ScheduledBannerEntry) => {
+      if (!entry.bannerState) return
+      loadState(entry.bannerState)
+      setEditingScheduledId(entry.id)
+    },
+    [loadState],
+  )
 
   // --- Provider selection handlers (browse flow) ---
   const handleSelectProvider = useCallback((provider: ApiProvider) => {
@@ -136,6 +160,15 @@ function App() {
   const [bgRemovedLogoUrl, setBgRemovedLogoUrl] = useState<string | null>(null)
   const [isRemovingBg, setIsRemovingBg] = useState(false)
 
+  /**
+   * IT-6: Per-image toggle flags — whether to display the bg-removed version.
+   * Defaults to false (show original). Flipped to true automatically after
+   * a successful removal call, and reset to false when the source image changes
+   * (product switch, upload override change).
+   */
+  const [showBgRemovedProduct, setShowBgRemovedProduct] = useState(false)
+  const [showBgRemovedLogo, setShowBgRemovedLogo] = useState(false)
+
   // Clean up blob URLs on unmount
   useEffect(() => {
     return () => {
@@ -144,30 +177,37 @@ function App() {
     }
   }, [bgRemovedProductUrl, bgRemovedLogoUrl])
 
-  // Reset processed URLs when selected product changes
+  // Reset processed URLs when selected product changes (IT-7: also reset toggle flags)
   useEffect(() => {
     if (bgRemovedProductUrl) URL.revokeObjectURL(bgRemovedProductUrl)
     if (bgRemovedLogoUrl) URL.revokeObjectURL(bgRemovedLogoUrl)
     setBgRemovedProductUrl(null)
     setBgRemovedLogoUrl(null)
+    // IT-7: hide toggle buttons when the product changes
+    setShowBgRemovedProduct(false)
+    setShowBgRemovedLogo(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id])
 
-  // Reset processed logo when brand logo override changes
+  // Reset processed logo when brand logo override changes (IT-7)
   useEffect(() => {
     if (bgRemovedLogoUrl) {
       URL.revokeObjectURL(bgRemovedLogoUrl)
       setBgRemovedLogoUrl(null)
     }
+    // IT-7: hide logo toggle when the source image changes
+    setShowBgRemovedLogo(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandLogoOverride])
 
-  // Reset processed product image when product image override changes
+  // Reset processed product image when product image override changes (IT-7)
   useEffect(() => {
     if (bgRemovedProductUrl) {
       URL.revokeObjectURL(bgRemovedProductUrl)
       setBgRemovedProductUrl(null)
     }
+    // IT-7: hide product toggle when the source image changes
+    setShowBgRemovedProduct(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productImageOverride])
 
@@ -199,8 +239,13 @@ function App() {
       if (result.status === 'fulfilled') {
         if (label === 'product image') {
           setBgRemovedProductUrl(result.value)
+          // IT-6: auto-flip toggle to "BG Removed" on success so the result
+          // is immediately visible without a manual click
+          setShowBgRemovedProduct(true)
         } else {
           setBgRemovedLogoUrl(result.value)
+          // IT-6: same auto-flip for the logo
+          setShowBgRemovedLogo(true)
         }
         successCount++
       } else {
@@ -224,19 +269,31 @@ function App() {
     (!hasLogo || !!bgRemovedLogoUrl)
   const removeBgDisabled = !selectedProduct || isRemovingBg || allAlreadyProcessed
 
-  // Assemble BannerState for the preview component
+  // Assemble BannerState for the preview component.
+  //
+  // IT-8: The toggle flags (showBgRemovedProduct / showBgRemovedLogo) control
+  // which image version is injected into the preview. When a toggle is ON and a
+  // bg-removed blob URL exists, that URL is used; otherwise the original source
+  // (user upload override or catalogue image) is shown.
+  //
+  // Injection is done via productImageOverride / brandLogoOverride so that
+  // BannerPreview's existing priority chain (override > catalogue) is respected
+  // regardless of whether the user has also uploaded a custom image.
   const bannerState: BannerState = useMemo(() => {
-    const effectiveProduct = selectedProduct
-      ? {
-          ...selectedProduct,
-          imageUrl: bgRemovedProductUrl ?? selectedProduct.imageUrl,
-        }
-      : null
+    // Product image: if toggle ON and blob ready → show bg-removed; else original
+    const effectiveProductImageOverride =
+      (showBgRemovedProduct && bgRemovedProductUrl)
+        ? bgRemovedProductUrl
+        : productImageOverride
 
-    const effectiveBrandLogo = bgRemovedLogoUrl ?? brandLogoOverride
+    // Brand logo: if toggle ON and blob ready → show bg-removed; else original
+    const effectiveBrandLogo =
+      (showBgRemovedLogo && bgRemovedLogoUrl)
+        ? bgRemovedLogoUrl
+        : brandLogoOverride
 
     return {
-      selectedProduct: effectiveProduct,
+      selectedProduct,
       selectedBackground,
       ctaText,
       badgeText,
@@ -252,11 +309,9 @@ function App() {
       brandLogoOverride: effectiveBrandLogo,
       productNameOverride,
       priceOverride,
-      productImageOverride,
+      productImageOverride: effectiveProductImageOverride,
       logoScale,
       productImageScale,
-      showQuantitySticker,
-      quantityStickerText,
     }
   }, [
     selectedProduct,
@@ -278,11 +333,25 @@ function App() {
     productImageOverride,
     bgRemovedProductUrl,
     bgRemovedLogoUrl,
+    showBgRemovedProduct,
+    showBgRemovedLogo,
     logoScale,
     productImageScale,
-    showQuantitySticker,
-    quantityStickerText,
   ])
+
+  /**
+   * Commits the current BannerContext state back to the scheduled entry being
+   * edited, then clears the editing selection. Called when the user clicks
+   * "Save" on a scheduled banner card (ES-2).
+   *
+   * `bannerState` is safe to reference here — this callback is declared after
+   * the `bannerState` useMemo above.
+   */
+  const handleSaveScheduledEntry = useCallback(() => {
+    if (!editingScheduledId) return
+    scheduledBanners.updateEntryState(editingScheduledId, bannerState)
+    setEditingScheduledId(null)
+  }, [editingScheduledId, scheduledBanners, bannerState])
 
   // Log missing images when products load (uses active data source)
   useEffect(() => {
@@ -359,11 +428,52 @@ function App() {
     <div className="h-screen overflow-hidden bg-[var(--surface-0)] text-[var(--text-primary)] flex">
       {/* Left Sidebar: Export + Direct Lookup + Provider/Product Search */}
       <aside className="w-64 border-r border-[var(--border-subtle)] flex flex-col bg-[var(--surface-1)]">
-        <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex flex-col gap-2">
           <h1 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-[0.08em]">
             Digihaat Banner
           </h1>
+
+          {/* Mode tabs: Builder vs. Scheduled */}
+          <div className="flex rounded-lg overflow-hidden border border-[var(--border-subtle)] text-[11px] font-medium">
+            <button
+              onClick={() => { setAppMode('builder'); setEditingScheduledId(null) }}
+              className={`flex-1 py-1.5 transition-interaction cursor-pointer ${
+                appMode === 'builder'
+                  ? 'bg-[var(--accent-base)] text-white'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--surface-2)]'
+              }`}
+            >
+              Builder
+            </button>
+            <button
+              onClick={() => setAppMode('scheduled')}
+              className={`flex-1 py-1.5 transition-interaction cursor-pointer ${
+                appMode === 'scheduled'
+                  ? 'bg-[var(--accent-base)] text-white'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--surface-2)]'
+              }`}
+            >
+              Scheduled
+            </button>
+          </div>
         </div>
+
+
+        {/* Scheduled-mode: calendar picker */}
+        {appMode === 'scheduled' && (
+          <div className="border-b border-[var(--border-subtle)]">
+            <CalendarPicker
+              value={scheduledBanners.selectedDate}
+              onChange={(date) => {
+                setEditingScheduledId(null)
+                scheduledBanners.setDate(date)
+              }}
+            />
+          </div>
+        )}
+
+        {/* Builder-only sidebar controls */}
+        {appMode === 'builder' && (<>
 
         {/* Export button */}
         <div className="border-b border-[var(--border-subtle)]">
@@ -413,11 +523,31 @@ function App() {
             onLoadMore={loadMoreProviders}
           />
         ) : null}
+
+        {/* End builder-only sidebar controls */}
+        </>)}
       </aside>
 
-      {/* Main Content: Banner Preview */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8 bg-[var(--surface-0)]">
-        {!selectedProduct ? (
+      {/* Main Content: Banner Preview (builder) or Scheduled grid */}
+      <main className={`flex-1 flex flex-col bg-[var(--surface-0)] ${appMode === 'builder' ? 'items-center justify-center p-8' : 'overflow-hidden'}`}>
+        {/* Scheduled banners mode — full-height scrollable grid */}
+        {appMode === 'scheduled' && (
+          <ScheduledBannersGrid
+            selectedDate={scheduledBanners.selectedDate}
+            isFetching={scheduledBanners.isFetching}
+            fetchError={scheduledBanners.fetchError}
+            entries={scheduledBanners.entries}
+            editingId={editingScheduledId}
+            onEditEntry={handleEditScheduledEntry}
+            onSaveEntry={handleSaveScheduledEntry}
+            editingBannerState={editingScheduledId ? bannerState : null}
+            onRemoveBgEntry={scheduledBanners.removeEntryBackground}
+            isRemovingBg={scheduledBanners.isRemovingBg}
+          />
+        )}
+
+        {/* Builder mode — single product preview */}
+        {appMode === 'builder' && (!selectedProduct ? (
           <div className="text-center flex flex-col items-center gap-4">
             <svg
               width="64"
@@ -460,19 +590,27 @@ function App() {
 
             <p className="text-[10px] text-[var(--text-tertiary)] self-end">722 × 312px</p>
           </div>
-        )}
+        ))}
       </main>
 
       {/* Right Sidebar: Controls + Logs */}
       <aside className="w-[360px] border-l border-[var(--border-subtle)] flex flex-col bg-[var(--surface-1)]">
-        <div className="px-4 py-3 border-b border-[var(--border-subtle)]">
-          <h2 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-[0.08em]">
-            Banner Settings
-          </h2>
-        </div>
+        {appMode === 'scheduled' && !editingScheduledId ? (
+          <div className="flex-1 flex items-center justify-center px-6">
+            <p className="text-sm text-[var(--text-tertiary)] text-center leading-relaxed">
+              Click <span className="font-medium text-[var(--text-secondary)]">Edit</span> on a banner to configure its settings
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="px-4 py-3 border-b border-[var(--border-subtle)]">
+              <h2 className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-[0.08em]">
+                Banner Settings
+              </h2>
+            </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <BannerControls
+            <div className="flex-1 overflow-y-auto">
+              <BannerControls
             ctaText={ctaText}
             badgeText={badgeText}
             showTnc={showTnc}
@@ -511,12 +649,29 @@ function App() {
             onProductImageChange={setProductImageOverride}
             productImageScale={productImageScale}
             onProductImageScaleChange={setProductImageScale}
-            showQuantitySticker={showQuantitySticker}
-            onQuantityStickerToggle={toggleQuantitySticker}
-            quantityStickerText={quantityStickerText}
-            onQuantityStickerTextChange={setQuantityStickerText}
-          />
-        </div>
+            // bg-version toggle props: use editing scheduled entry when in scheduled mode
+            hasBgRemovedProduct={editingScheduledEntry
+              ? !!editingScheduledEntry.bgRemovedProductImageUrl
+              : !!bgRemovedProductUrl}
+            showBgRemovedProduct={editingScheduledEntry
+              ? editingScheduledEntry.showBgRemovedProduct
+              : showBgRemovedProduct}
+            onToggleBgRemovedProduct={editingScheduledEntry
+              ? () => scheduledBanners.toggleEntryBgRemovedProduct(editingScheduledEntry.id)
+              : () => setShowBgRemovedProduct(p => !p)}
+            hasBgRemovedLogo={editingScheduledEntry
+              ? !!editingScheduledEntry.bgRemovedLogoUrl
+              : !!bgRemovedLogoUrl}
+            showBgRemovedLogo={editingScheduledEntry
+              ? editingScheduledEntry.showBgRemovedLogo
+              : showBgRemovedLogo}
+            onToggleBgRemovedLogo={editingScheduledEntry
+              ? () => scheduledBanners.toggleEntryBgRemovedLogo(editingScheduledEntry.id)
+              : () => setShowBgRemovedLogo(p => !p)}
+            />
+            </div>
+          </>
+        )}
 
         {/* Logs at the bottom */}
         <div className="border-t border-[var(--border-subtle)] h-48">

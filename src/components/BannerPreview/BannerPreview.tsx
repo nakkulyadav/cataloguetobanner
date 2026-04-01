@@ -31,11 +31,11 @@ import {
   LEFT_SECTION_GAPS,
   LEFT_SECTION_TOP_PADDING,
   LEFT_SECTION_BOTTOM_PADDING,
+  LOGO_MIN_TOP_PADDING,
   PRICE_HEIGHT,
   SUBHEADING_TEXT_HEIGHT,
   CTA_HEIGHT,
   TNC_HEIGHT,
-  QUANTITY_STICKER,
 } from '@/constants/bannerTemplate'
 
 interface BannerPreviewProps {
@@ -99,8 +99,6 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       productImageOverride,
       logoScale,
       productImageScale,
-      showQuantitySticker,
-      quantityStickerText,
     } = state
 
     const brandLogo = brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
@@ -207,7 +205,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       const elements: Array<{ id: ElementId; height: number }> = []
 
       if (showLogo && brandLogo) {
-        elements.push({ id: 'logo', height: BRAND_LOGO.height })
+        elements.push({ id: 'logo', height: Math.round(BRAND_LOGO.height * logoScale) })
       }
       if (showHeading && displayName) {
         elements.push({ id: 'heading', height: headingHeight })
@@ -226,36 +224,113 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       }
 
       return elements
-    }, [showLogo, brandLogo, showHeading, displayName, headingHeight, showSubheading, subheadingText, actualSubheadingHeight, showPrice, displayPrice, showCta, showTnc])
+    }, [showLogo, brandLogo, logoScale, showHeading, displayName, headingHeight, showSubheading, subheadingText, actualSubheadingHeight, showPrice, displayPrice, showCta, showTnc])
 
     // --- Compute dynamic vertical positions ---
-    // Elements are vertically centered as a group within the banner height.
+    // CTA and T&C are bottom-anchored (computed from the bottom up) so they stay
+    // fixed regardless of how tall the heading/subheading content grows.
+    // All other elements (logo, heading, subheading, price) fill the space above.
     const positions = useMemo(() => {
       const posMap: Partial<Record<ElementId, number>> = {}
       if (visibleElements.length === 0) return posMap
 
-      // Total height = sum of element heights + gaps between consecutive elements
-      let totalHeight = 0
-      for (let i = 0; i < visibleElements.length; i++) {
-        const el = visibleElements[i]!
-        totalHeight += el.height
-        const next = visibleElements[i + 1]
-        if (next) {
-          totalHeight += getGapBetween(el.id, next.id)
-        }
+      const topBound = LEFT_SECTION_TOP_PADDING
+      const bottomBound = BANNER_HEIGHT - LEFT_SECTION_BOTTOM_PADDING
+
+      // --- Step 1: Bottom-anchor CTA and T&C ---
+      let topGroupBottomBound = bottomBound
+
+      const tncEl = visibleElements.find(el => el.id === 'tnc')
+      const ctaEl = visibleElements.find(el => el.id === 'cta')
+
+      if (tncEl) {
+        const tncTop = bottomBound - TNC_HEIGHT
+        posMap['tnc'] = tncTop
+        topGroupBottomBound = tncTop
       }
 
-      // Center the group within the padded vertical bounds
-      const usableHeight = BANNER_HEIGHT - LEFT_SECTION_TOP_PADDING - LEFT_SECTION_BOTTOM_PADDING
-      let currentY = LEFT_SECTION_TOP_PADDING + Math.max(0, (usableHeight - totalHeight) / 2)
+      if (ctaEl) {
+        const ctaBottom = tncEl
+          ? posMap['tnc']! - LEFT_SECTION_GAPS['cta-tnc']!
+          : bottomBound
+        const ctaTop = ctaBottom - CTA_HEIGHT
+        posMap['cta'] = ctaTop
+        topGroupBottomBound = ctaTop
+      }
 
-      for (let i = 0; i < visibleElements.length; i++) {
-        const el = visibleElements[i]!
+      // --- Step 2: Lay out remaining elements in the space above CTA ---
+      const topElements = visibleElements.filter(el => el.id !== 'cta' && el.id !== 'tnc')
+      if (topElements.length === 0) return posMap
+
+      const lastTopEl = topElements[topElements.length - 1]!
+      const anchorEl = ctaEl ?? tncEl
+      const gapToAnchor = anchorEl ? getGapBetween(lastTopEl.id, anchorEl.id) : 0
+      const topGroupMax = topGroupBottomBound - gapToAnchor
+      const usableTopHeight = topGroupMax - topBound
+
+      const topGaps: number[] = topElements.slice(0, -1).map((el, i) =>
+        getGapBetween(el.id, topElements[i + 1]!.id),
+      )
+      const totalTopElementHeight = topElements.reduce((sum, el) => sum + el.height, 0)
+      const totalTopGapHeight = topGaps.reduce((sum, g) => sum + g, 0)
+
+      // Logo-first two-phase layout (logo absorbs scale growth upward)
+      if (topElements[0]?.id === 'logo' && topElements.length > 1) {
+        const scaledLogoHeight = topElements[0]!.height
+        const logoRestGap = topGaps[0]!
+        const restElements = topElements.slice(1)
+        const restGaps = topGaps.slice(1)
+        const restHeight = restElements.reduce((sum, el) => sum + el.height, 0)
+        const restGapHeight = restGaps.reduce((sum, g) => sum + g, 0)
+
+        const baseGroupHeight = BRAND_LOGO.height + logoRestGap + restHeight + restGapHeight
+        const anchorGroupStart = topBound + Math.max(0, (usableTopHeight - baseGroupHeight) / 2)
+        const headingAnchorTop = anchorGroupStart + BRAND_LOGO.height + logoRestGap
+
+        const idealLogoTop = headingAnchorTop - logoRestGap - scaledLogoHeight
+        const logoTop = Math.max(LOGO_MIN_TOP_PADDING, idealLogoTop)
+        const firstRestTop = logoTop + scaledLogoHeight + logoRestGap
+
+        posMap['logo'] = logoTop
+
+        let scaledRestGaps = restGaps
+        if (firstRestTop + restHeight + restGapHeight > topGroupMax && restGapHeight > 0) {
+          const available = topGroupMax - firstRestTop
+          const excess = restHeight + restGapHeight - available
+          const gapScale = Math.max(0, (restGapHeight - excess) / restGapHeight)
+          scaledRestGaps = restGaps.map(g => Math.round(g * gapScale))
+        }
+
+        let currentY = firstRestTop
+        for (let i = 0; i < restElements.length; i++) {
+          const el = restElements[i]!
+          posMap[el.id] = currentY
+          currentY += el.height
+          if (i < scaledRestGaps.length) currentY += scaledRestGaps[i]!
+        }
+
+        return posMap
+      }
+
+      // Standard layout: vertically center top elements in the available space
+      let scaledTopGaps = topGaps
+      let totalTopHeight = totalTopElementHeight + totalTopGapHeight
+
+      if (totalTopHeight > usableTopHeight && totalTopGapHeight > 0) {
+        const excess = totalTopHeight - usableTopHeight
+        const gapScale = Math.max(0, (totalTopGapHeight - excess) / totalTopGapHeight)
+        scaledTopGaps = topGaps.map(g => Math.round(g * gapScale))
+        totalTopHeight = totalTopElementHeight + scaledTopGaps.reduce((sum, g) => sum + g, 0)
+      }
+
+      let currentY = topBound + Math.max(0, (usableTopHeight - totalTopHeight) / 2)
+
+      for (let i = 0; i < topElements.length; i++) {
+        const el = topElements[i]!
         posMap[el.id] = currentY
         currentY += el.height
-        const next = visibleElements[i + 1]
-        if (next) {
-          currentY += getGapBetween(el.id, next.id)
+        if (i < scaledTopGaps.length) {
+          currentY += scaledTopGaps[i]!
         }
       }
 
@@ -321,7 +396,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               objectPosition: 'left',
               // Scale from the left edge so the logo stays left-anchored
               transform: `scale(${logoScale})`,
-              transformOrigin: 'left center',
+              transformOrigin: 'left top',
             }}
           />
         )}
@@ -513,33 +588,6 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           />
         )}
 
-        {/* Quantity Sticker (bottom-right of product image, toggleable) */}
-        {showQuantitySticker && quantityStickerText && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: QUANTITY_STICKER.bottom,
-              right: QUANTITY_STICKER.right,
-              width: QUANTITY_STICKER.width,
-              paddingLeft: QUANTITY_STICKER.paddingX,
-              paddingRight: QUANTITY_STICKER.paddingX,
-              paddingTop: QUANTITY_STICKER.paddingY,
-              paddingBottom: QUANTITY_STICKER.paddingY,
-              borderRadius: QUANTITY_STICKER.borderRadius,
-              backgroundColor: ctaBgColor,
-              fontSize: QUANTITY_STICKER.fontSize,
-              fontWeight: QUANTITY_STICKER.fontWeight,
-              fontFamily: QUANTITY_STICKER.fontFamily,
-              color: QUANTITY_STICKER.color,
-              lineHeight: QUANTITY_STICKER.lineHeight,
-              textAlign: 'center',
-              wordBreak: 'break-word',
-              boxSizing: 'border-box' as const,
-            }}
-          >
-            {quantityStickerText}
-          </div>
-        )}
       </div>
     )
   },
@@ -547,4 +595,4 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
 
 BannerPreview.displayName = 'BannerPreview'
 
-export default BannerPreview
+export default BannerPreview 

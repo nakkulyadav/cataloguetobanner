@@ -3,6 +3,7 @@ import type { BackgroundOption, ProductPrice } from '@/types'
 import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 import BackgroundGallery from '@/components/BackgroundGallery/BackgroundGallery'
 import ImageUploadZone from '@/components/ImageUploadZone/ImageUploadZone'
+import BgVersionPill from '@/components/BgVersionPill/BgVersionPill'
 
 const CTA_PRESETS = ['SHOP NOW', 'BUY NOW', 'ORDER NOW']
 const BADGE_PRESETS = ['Free Delivery', 'New Arrival', 'Limited Offer']
@@ -57,15 +58,26 @@ interface BannerControlsProps {
   /** Zoom scale for the product image (1 = 100%). Range [0.5, 2.0]. */
   productImageScale: number
   onProductImageScaleChange: (scale: number) => void
-  /** Whether the quantity sticker is currently visible on the banner */
-  showQuantitySticker: boolean
-  onQuantityStickerToggle: () => void
+  // --- IT-10: bg-version toggle props ---
   /**
-   * Text inside the quantity sticker. Auto-populated from catalogue as "{value} {unit}".
-   * null = no catalogue data; empty field when sticker is on.
+   * True once a background-removed product image blob URL is available.
+   * When true, a two-segment "Original / BG Removed" pill is shown beneath
+   * the Product Image upload zone.
    */
-  quantityStickerText: string | null
-  onQuantityStickerTextChange: (text: string | null) => void
+  hasBgRemovedProduct: boolean
+  /** Whether the bg-removed product image version is currently displayed */
+  showBgRemovedProduct: boolean
+  /** Called when the user clicks either segment of the product image version pill */
+  onToggleBgRemovedProduct: () => void
+  /**
+   * True once a background-removed brand logo blob URL is available.
+   * When true, a version pill is shown beneath the Brand Logo upload zone.
+   */
+  hasBgRemovedLogo: boolean
+  /** Whether the bg-removed logo version is currently displayed */
+  showBgRemovedLogo: boolean
+  /** Called when the user clicks either segment of the logo version pill */
+  onToggleBgRemovedLogo: () => void
 }
 
 export default function BannerControls({
@@ -107,16 +119,18 @@ export default function BannerControls({
   onProductImageChange,
   productImageScale,
   onProductImageScaleChange,
-  showQuantitySticker,
-  onQuantityStickerToggle,
-  quantityStickerText,
-  onQuantityStickerTextChange,
+  hasBgRemovedProduct,
+  showBgRemovedProduct,
+  onToggleBgRemovedProduct,
+  hasBgRemovedLogo,
+  showBgRemovedLogo,
+  onToggleBgRemovedLogo,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
 
   return (
     <div className="space-y-5 p-3">
-      {/* Brand Logo — toggle + upload zone + zoom slider */}
+      {/* Brand Logo — toggle + upload zone + zoom slider + bg-version pill (IT-12) */}
       <Section title="Brand Logo">
         <TogglePill checked={showLogo} onToggle={onLogoToggle} />
         {showLogo && (
@@ -131,6 +145,13 @@ export default function BannerControls({
               onChange={onLogoScaleChange}
               onReset={() => onLogoScaleChange(1)}
             />
+            {/* IT-12: show version toggle only when a bg-removed blob is ready */}
+            {hasBgRemovedLogo && (
+              <BgVersionPill
+                showBgRemoved={showBgRemovedLogo}
+                onToggle={onToggleBgRemovedLogo}
+              />
+            )}
           </div>
         )}
       </Section>
@@ -323,7 +344,7 @@ export default function BannerControls({
         )}
       </Section>
 
-      {/* Product Image — upload zone + zoom slider */}
+      {/* Product Image — upload zone + zoom slider + bg-version pill (IT-11) */}
       <Section title="Product Image">
         <div className="space-y-2">
           <ImageUploadZone
@@ -336,27 +357,16 @@ export default function BannerControls({
             onChange={onProductImageScaleChange}
             onReset={() => onProductImageScaleChange(1)}
           />
+          {/* IT-11: show version toggle only when a bg-removed blob is ready */}
+          {hasBgRemovedProduct && (
+            <BgVersionPill
+              showBgRemoved={showBgRemovedProduct}
+              onToggle={onToggleBgRemovedProduct}
+            />
+          )}
         </div>
       </Section>
 
-      {/* Quantity Sticker — toggle + editable text (auto-filled from catalogue) */}
-      <Section title="Quantity Sticker">
-        <TogglePill checked={showQuantitySticker} onToggle={onQuantityStickerToggle} />
-        {showQuantitySticker && (
-          <input
-            type="text"
-            value={quantityStickerText ?? ''}
-            onChange={(e) => {
-              // Convert empty string back to null (no data) to keep the
-              // null/empty distinction meaningful in BannerPreview.
-              onQuantityStickerTextChange(e.target.value || null)
-            }}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-            className="input-base mt-2"
-            placeholder="e.g. 5 Pack"
-          />
-        )}
-      </Section>
     </div>
   )
 }
@@ -459,6 +469,7 @@ function ZoomSlider({
     </div>
   )
 }
+
 
 function PresetChips({
   presets,

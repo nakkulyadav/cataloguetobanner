@@ -15,75 +15,6 @@ export function formatPrice(value: string | number): string {
 // API response parsers (structured item_details / provider_details objects)
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Quantity display formatting
-// ---------------------------------------------------------------------------
-
-/**
- * Converts a parsed quantity into the human-readable string shown on the sticker.
- *
- * Rules:
- *   unit === "Pack" (case-insensitive) → "Pack of {value}"   e.g. "Pack of 5"
- *   anything else                      → "{value} {unit}"    e.g. "200 ml", "100 g"
- *
- * Exported so useBannerState (and tests) share one source of truth for this format.
- */
-export function formatQuantityText(q: { unit: string; value: string }): string {
-  if (q.unit.toLowerCase() === 'pack') {
-    return `Pack of ${q.value}`
-  }
-  return `${q.value} ${q.unit}`
-}
-
-// ---------------------------------------------------------------------------
-// Quantity-extraction helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Returns true when the measure is the ONDC generic "no-data" placeholder.
- *
- * SellerApp / Shiprocket BPPs routinely emit { unit: "unit", value: "1" } as a
- * catalogue default when no real package measure has been configured.  Displaying
- * this as "1 unit" on the banner sticker is misleading, so we suppress it and
- * fall through to the name-regex extraction below.
- */
-function isGenericUnitPlaceholder(measure: { unit: string; value: string }): boolean {
-  return measure.unit.toLowerCase() === 'unit' && measure.value === '1'
-}
-
-/**
- * Tries to parse a "Pack of N" quantity from free-form text (product name or
- * short description).  Handles case variations and extra internal whitespace.
- *
- * Matches: "Pack of 5", "PACK OF 12", "Haldirams Bhujia pack of 3 100g", etc.
- *
- * Returns { unit: 'Pack', value: '<N>' } or undefined when no match is found.
- */
-function extractPackOfFromText(text: string): { unit: string; value: string } | undefined {
-  const match = /pack\s+of\s+(\d+)/i.exec(text)
-  return match ? { unit: 'Pack', value: match[1]! } : undefined
-}
-
-/**
- * Tries to extract a weight or volume quantity from free-form text.
- *
- * Matches patterns like "200 GMs", "100ml", "1.5 kg", "500 grams", "1 L", etc.
- * Longer unit aliases are listed first in the alternation so that, for example,
- * "grams" is matched before the single-char "g" within the same word.
- * The `\b` word-boundary anchors prevent false positives inside longer words.
- *
- * Returns { unit: lowercased_unit, value } or undefined when no match is found.
- */
-function extractUnitQuantityFromText(text: string): { unit: string; value: string } | undefined {
-  const match = /\b(\d+(?:\.\d+)?)\s*(grams?|gms?|kilograms?|kgs?|kg|litres?|ltrs?|ltr|ml|oz|lbs?|g|l)\b/i.exec(text)
-  if (!match) return undefined
-  return { unit: match[2]!.toLowerCase(), value: match[1]! }
-}
-
-// ---------------------------------------------------------------------------
-// API response parsers (structured item_details / provider_details objects)
-// ---------------------------------------------------------------------------
-
 /**
  * Converts a single API catalogue item into a ParsedProduct.
  * Returns null if the item is malformed (missing item_id).
@@ -136,34 +67,6 @@ export function parseApiItem(item: ApiCatalogItem): ParsedProduct | null {
     }
   }
 
-  // --- Package quantity (for the quantity sticker) ---
-  // Priority order:
-  //   1. item_details.quantity.unitized.measure (raw_source fallback included),
-  //      UNLESS it is the generic ONDC placeholder { unit:"unit", value:"1" }
-  //      (SellerApp/Shiprocket BPPs emit this when no real data is configured).
-  //   2. "Pack of N" pattern extracted from the product name or short description,
-  //      covering products whose pack size is stated in text but not in the measure
-  //      field (e.g. "Haldirams Bhujia Pack of 5 100g").
-  // Both unit and value must be non-empty strings to be considered valid.
-  let quantity: { unit: string; value: string } | undefined
-  const measure =
-    item.item_details?.quantity?.unitized?.measure ??
-    item.raw_source?.item_details?.quantity?.unitized?.measure
-  if (measure?.unit && measure?.value && !isGenericUnitPlaceholder(measure)) {
-    quantity = { unit: measure.unit, value: measure.value }
-  }
-  // Fallback: scan name then shortDesc, trying two patterns in priority order:
-  //   1. "Pack of N"  — e.g. "Haldirams Bhujia Pack of 5"
-  //   2. Weight/volume  — e.g. "Sago (Sabudana) 200 GMs", "Juice 1.5 L"
-  // Triggered only when no meaningful unitized measure was found above.
-  if (!quantity) {
-    quantity =
-      extractPackOfFromText(name) ??
-      extractPackOfFromText(shortDesc) ??
-      extractUnitQuantityFromText(name) ??
-      extractUnitQuantityFromText(shortDesc)
-  }
-
   // --- Price formatting ---
   // Prefer nested item_details.price, fall back to top-level price/mrp fields
   let price: ProductPrice | undefined
@@ -194,7 +97,6 @@ export function parseApiItem(item: ApiCatalogItem): ParsedProduct | null {
     isRelated,
     parentId,
     price,
-    quantity,
     provider: { brandName, brandLogo, companyName },
   }
 }

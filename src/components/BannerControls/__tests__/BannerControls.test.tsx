@@ -51,10 +51,12 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof BannerControls
     onProductImageChange: vi.fn(),
     productImageScale: 1,
     onProductImageScaleChange: vi.fn(),
-    showQuantitySticker: false,
-    onQuantityStickerToggle: vi.fn(),
-    quantityStickerText: null,
-    onQuantityStickerTextChange: vi.fn(),
+    hasBgRemovedProduct: false,
+    showBgRemovedProduct: false,
+    onToggleBgRemovedProduct: vi.fn(),
+    hasBgRemovedLogo: false,
+    showBgRemovedLogo: false,
+    onToggleBgRemovedLogo: vi.fn(),
     ...overrides,
   }
 }
@@ -111,103 +113,85 @@ describe('BannerControls — zoom sliders', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Quantity sticker section (QS-25)
+// IT-23 — bg-removed version toggle (IT-11/IT-12)
 // ---------------------------------------------------------------------------
 
-describe('BannerControls — quantity sticker section', () => {
-  it('renders the Quantity Sticker section label', () => {
-    render(<BannerControls {...makeProps()} />)
-    expect(screen.getByText('Quantity Sticker')).toBeDefined()
+describe('BannerControls — bg-removed version toggle (IT-23)', () => {
+  it('renders the product image version toggle when hasBgRemovedProduct is true', () => {
+    render(<BannerControls {...makeProps({ hasBgRemovedProduct: true })} />)
+    // BgVersionPill renders a role="switch" button
+    const switches = screen.getAllByRole('switch')
+    expect(switches.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('does not show the text field when showQuantitySticker is false', () => {
-    render(<BannerControls {...makeProps({ showQuantitySticker: false })} />)
-    expect(screen.queryByPlaceholderText('e.g. 5 Pack')).toBeNull()
+  it('does not render the product image version toggle when hasBgRemovedProduct is false', () => {
+    render(<BannerControls {...makeProps({ hasBgRemovedProduct: false })} />)
+    // With hasBgRemovedProduct false and showLogo false, any remaining switches
+    // are not from the bg-removed product pill
+    // Verify no "Original" / "BG Removed" text from the pill
+    expect(screen.queryByText('Original')).toBeNull()
+    expect(screen.queryByText('BG Removed')).toBeNull()
   })
 
-  it('shows the text field when showQuantitySticker is true', () => {
-    render(
-      <BannerControls
-        {...makeProps({
-          showQuantitySticker: true,
-          quantityStickerText: '5 Pack',
-        })}
-      />,
-    )
-    const input = screen.getByPlaceholderText('e.g. 5 Pack') as HTMLInputElement
-    expect(input).toBeDefined()
-    expect(input.value).toBe('5 Pack')
-  })
-
-  it('shows an empty input when quantityStickerText is null and sticker is on', () => {
-    render(
-      <BannerControls
-        {...makeProps({
-          showQuantitySticker: true,
-          quantityStickerText: null,
-        })}
-      />,
-    )
-    const input = screen.getByPlaceholderText('e.g. 5 Pack') as HTMLInputElement
-    expect(input.value).toBe('')
-  })
-
-  it('calls onQuantityStickerToggle when the toggle pill is clicked', () => {
+  it('calls onToggleBgRemovedProduct when the product image toggle is clicked', () => {
     const onToggle = vi.fn()
     render(
       <BannerControls
         {...makeProps({
-          showQuantitySticker: false,
-          onQuantityStickerToggle: onToggle,
+          hasBgRemovedProduct: true,
+          showBgRemovedProduct: false,
+          onToggleBgRemovedProduct: onToggle,
         })}
       />,
     )
-
-    // The toggle pill for Quantity Sticker is a button with role="switch"
-    // There may be multiple toggles — find the one near the label.
-    // We locate by aria-checked=false switches and click the last one
-    // (Quantity Sticker is the last section).
-    const switches = screen.getAllByRole('switch')
-    const quantitySwitch = switches[switches.length - 1]!
-    fireEvent.click(quantitySwitch)
-
+    // BgVersionPill shows "Original" when showBgRemoved is false
+    fireEvent.click(screen.getByText('Original'))
     expect(onToggle).toHaveBeenCalledTimes(1)
   })
 
-  it('calls onQuantityStickerTextChange when the text field changes', () => {
-    const onChange = vi.fn()
+  it('renders the logo version toggle when hasBgRemovedLogo is true and showLogo is true', () => {
     render(
       <BannerControls
         {...makeProps({
-          showQuantitySticker: true,
-          quantityStickerText: '5 Pack',
-          onQuantityStickerTextChange: onChange,
+          showLogo: true,
+          hasBgRemovedLogo: true,
+          showBgRemovedLogo: true,
         })}
       />,
     )
-
-    const input = screen.getByPlaceholderText('e.g. 5 Pack')
-    fireEvent.change(input, { target: { value: '10 Pack' } })
-
-    expect(onChange).toHaveBeenCalledWith('10 Pack')
+    // At least one BgVersionPill rendered
+    expect(screen.getAllByRole('switch').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('calls onQuantityStickerTextChange with null when the field is cleared', () => {
-    const onChange = vi.fn()
+  it('does not render the logo version toggle when hasBgRemovedLogo is false', () => {
     render(
       <BannerControls
         {...makeProps({
-          showQuantitySticker: true,
-          quantityStickerText: '5 Pack',
-          onQuantityStickerTextChange: onChange,
+          showLogo: true,
+          hasBgRemovedLogo: false,
         })}
       />,
     )
+    // No "BG Removed" text when pill is hidden
+    expect(screen.queryByText('BG Removed')).toBeNull()
+  })
 
-    const input = screen.getByPlaceholderText('e.g. 5 Pack')
-    fireEvent.change(input, { target: { value: '' } })
-
-    // Empty string should be converted to null (see BannerControls implementation)
-    expect(onChange).toHaveBeenCalledWith(null)
+  it('calls onToggleBgRemovedLogo when the logo version toggle is clicked', () => {
+    const onToggle = vi.fn()
+    render(
+      <BannerControls
+        {...makeProps({
+          showLogo: true,
+          hasBgRemovedLogo: true,
+          showBgRemovedLogo: false,
+          onToggleBgRemovedLogo: onToggle,
+          hasBgRemovedProduct: false,
+        })}
+      />,
+    )
+    // Only the logo pill is shown here, which shows "Original" when showBgRemovedLogo is false
+    // There may be multiple "Original" texts if product pill is also shown — but hasBgRemovedProduct is false
+    fireEvent.click(screen.getByText('Original'))
+    expect(onToggle).toHaveBeenCalledTimes(1)
   })
 })

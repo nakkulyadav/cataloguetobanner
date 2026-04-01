@@ -21,8 +21,10 @@ const LEFT_MARGIN = 40;
 
 // --- Left-section vertical bounds ---
 // Content is centered within [TOP_PADDING, BANNER_HEIGHT - BOTTOM_PADDING].
-export const LEFT_SECTION_TOP_PADDING = 20;
-export const LEFT_SECTION_BOTTOM_PADDING = 20;
+export const LEFT_SECTION_TOP_PADDING = 10;
+export const LEFT_SECTION_BOTTOM_PADDING = 15;
+/** Minimum top gap for the brand logo when scaling up — logo absorbs growth upward until this floor. */
+export const LOGO_MIN_TOP_PADDING = 5;
 
 // --- Brand Logo ---
 export const BRAND_LOGO = {
@@ -119,7 +121,7 @@ export const TNC_TEXT = {
   x: LEFT_MARGIN,
   fontSize: 10,
   fontWeight: 500,
-  color: '#393f86',
+  color: '#5F5F5F',
   maxWidth: 370,
   /** lineHeight: 1.2 ensures height = fontSize * 1.2 = TNC_HEIGHT */
   lineHeight: 1.2,
@@ -142,12 +144,12 @@ export const OFFER_BADGE = {
 // When an element is hidden, its neighbors collapse using the fallback lookup
 // in getGapBetween() which walks the ordered element list.
 export const LEFT_SECTION_GAPS: Record<string, number> = {
-  'logo-heading': 10,
+  'logo-heading': 5,
   'heading-subheading': 10,  // compact heading → subheading
   'heading-price': 10,       // normal heading → price (subheading off)
   'subheading-price': 15,    // subheading → price
-  'subheading-cta': 15,      // subheading → CTA (when price is off)
-  'price-cta': 15,           // price → CTA
+  'subheading-cta': 10,      // subheading → CTA (when price is off)
+  'price-cta': 10,           // price → CTA
   'cta-tnc': 3,
 };
 
@@ -172,38 +174,12 @@ export const TNC_HEIGHT = TNC_TEXT.fontSize * TNC_TEXT.lineHeight;
  * Set to the banner's 50/50 split point so the right-half image never
  * encroaches on the left-half text content (logo, heading, price, CTA).
  */
-export const IMAGE_LEFT_BARRIER = 340;
+export const IMAGE_LEFT_BARRIER = 320;
 
 export const PRODUCT_IMAGE = {
   /** Horizontal centre of the right half: (361 + 722) / 2 */
   centerX: 550,
   width: 300,
   height: 270,
-  bottomOffset: 3,
-};
-
-// --- Quantity Sticker (bottom-right of product image area) ---
-// Positioned so its right edge aligns with the product image's right edge.
-// Overlaps the lower-right corner of the product image, matching the
-// design reference (e.g. "5 Pack", "200 ml").
-export const QUANTITY_STICKER = {
-  /**
-   * Distance from the banner's right edge.
-   * = BANNER_WIDTH - (PRODUCT_IMAGE.centerX + PRODUCT_IMAGE.width / 2)
-   * Places the sticker's right edge flush with the product image's right edge.
-   */
-  right: BANNER_WIDTH - (PRODUCT_IMAGE.centerX + PRODUCT_IMAGE.width / 2.3),
-  /** Distance from the banner's bottom edge — slightly above the image bottom edge */
-  bottom: PRODUCT_IMAGE.bottomOffset + 25,
-  /** Fixed pill width; height grows with content (word-wrap) */
-  width: 65,
-  paddingX: 10,
-  paddingY: 12,
-  borderRadius: 36,
-  fontSize: 16,
-  fontWeight: 600,
-  fontFamily: '"Inter", sans-serif',
-  color: '#FFFFFF',
-  lineHeight: 1.3,
-  /** Background colour is sourced from the active CTA colour at render time (see BannerPreview) */
+  bottomOffset: 1,
 };

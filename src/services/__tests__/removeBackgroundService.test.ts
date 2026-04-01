@@ -1,147 +1,293 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { removeBackground } from '../removeBackgroundService'
 
-// --- Helpers ---
+// ---------------------------------------------------------------------------
+// Mock Worker
+// ---------------------------------------------------------------------------
 
-/** Builds a minimal mock Response for successful remove.bg calls. */
-function mockOkResponse(): Response {
-  const blob = new Blob(['fake-png-data'], { type: 'image/png' })
-  return new Response(blob, { status: 200, statusText: 'OK' })
+/**
+ * Minimal stand-in for the browser's Worker API.
+ *
+ * The constructor captures a reference to the latest instance so individual
+ * tests can drive the worker's response by calling triggerMessage /
+ * triggerError directly.
+ *
+ * We don't stub the Worker URL — it is ignored by the mock constructor.
+ */
+interface WorkerLike {
+  onmessage: ((e: MessageEvent) => void) | null
+  onerror: ((e: ErrorEvent) => void) | null
+  postMessage: ReturnType<typeof vi.fn>
+  terminate: ReturnType<typeof vi.fn>
 }
 
-/** Builds a mock Response for failed remove.bg calls. */
-function mockErrorResponse(status: number, statusText: string): Response {
-  return new Response(null, { status, statusText })
+let lastWorker: WorkerLike | null = null
+
+function MockWorkerConstructor(_url: URL, _opts?: WorkerOptions) {
+  const instance: WorkerLike = {
+    onmessage: null,
+    onerror: null,
+    postMessage: vi.fn(),
+    terminate: vi.fn(),
+  }
+  lastWorker = instance
+  return instance
 }
 
-// --- Tests ---
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-describe('removeBackgroundService', () => {
-  const FAKE_API_KEY = 'test-api-key-12345'
-  const FAKE_IMAGE_URL = 'https://example.com/product.jpg'
-  const FAKE_BLOB_URL = 'blob:http://localhost/fake-blob-id'
+const FAKE_BLOB_URL = 'blob:http://localhost/fake-result'
+const REMOTE_IMAGE_URL = 'https://example.com/product.jpg'
+const LOCAL_BLOB_URL = 'blob:http://localhost:5173/some-uuid'
+const DATA_URI = 'data:image/png;base64,iVBORw0KGgo='
 
-  beforeEach(() => {
-    // Provide a valid API key via Vite env
-    vi.stubEnv('VITE_REMOVEBG_API_KEY', FAKE_API_KEY)
+/** Flushes all pending microtasks and macrotasks so that async code (fetch
+ *  awaits, worker creation) runs to the point where the worker is ready. */
+const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 
-    // Mock URL.createObjectURL — jsdom doesn't support it natively
-    vi.stubGlobal('URL', {
-      ...globalThis.URL,
-      createObjectURL: vi.fn(() => FAKE_BLOB_URL),
-      revokeObjectURL: vi.fn(),
+/** Simulates the worker posting a successful result back to the service. */
+function triggerWorkerSuccess(resultBlob: Blob) {
+  lastWorker!.onmessage!({ data: { result: resultBlob } } as MessageEvent)
+}
+
+/** Simulates the worker posting an error string back to the service. */
+function triggerWorkerError(message: string) {
+  lastWorker!.onmessage!({ data: { error: message } } as MessageEvent)
+}
+
+/** Simulates a Worker-level error event (e.g. worker script failed to load). */
+function triggerWorkerLoadError(message: string) {
+  lastWorker!.onerror!({ message } as ErrorEvent)
+}
+
+// ---------------------------------------------------------------------------
+// Setup / Teardown
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  lastWorker = null
+
+  // Replace the global Worker constructor with our lightweight mock.
+  vi.stubGlobal('Worker', MockWorkerConstructor)
+
+  // jsdom does not implement URL.createObjectURL / revokeObjectURL at all,
+  // so vi.spyOn cannot be used (the property doesn't exist to spy on).
+  // We attach vi.fn() stubs directly to the URL class and delete them in
+  // afterEach so no state bleeds between tests.
+  // The URL *constructor* itself is untouched — new URL(path, base) still
+  // works, which is needed by the service to construct the worker script URL.
+  ;(URL as unknown as Record<string, unknown>).createObjectURL = vi.fn(() => FAKE_BLOB_URL)
+  ;(URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn()
+})
+
+afterEach(() => {
+  delete (URL as unknown as Record<string, unknown>).createObjectURL
+  delete (URL as unknown as Record<string, unknown>).revokeObjectURL
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('removeBackground — Worker integration', () => {
+  describe('remote URLs (fetched via /api/image proxy)', () => {
+    it('resolves with a blob URL when the worker reports success', async () => {
+      const resultBlob = new Blob(['png-data'], { type: 'image/png' })
+      const proxyResponse = new Response(new Blob(['raw'], { type: 'image/jpeg' }))
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(proxyResponse)
+
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+
+      // Let fetch + blob() microtasks run so the Worker is created and
+      // postMessage has been called before we simulate the response.
+      await flushPromises()
+      triggerWorkerSuccess(resultBlob)
+
+      const result = await promise
+      expect(result).toBe(FAKE_BLOB_URL)
+      expect((URL as unknown as Record<string, ReturnType<typeof vi.fn>>).createObjectURL)
+        .toHaveBeenCalledWith(resultBlob)
+    })
+
+    it('routes remote URLs through the /api/image proxy', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(new Blob(['raw'])))
+
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerSuccess(new Blob())
+
+      await promise
+
+      expect(fetchSpy).toHaveBeenCalledOnce()
+      const calledUrl = fetchSpy.mock.calls[0]![0] as string
+      expect(calledUrl).toMatch(/^\/api\/image\?url=/)
+      expect(calledUrl).toContain(encodeURIComponent(REMOTE_IMAGE_URL))
+    })
+
+    it('throws when the proxy fetch returns a non-OK status', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(null, { status: 404, statusText: 'Not Found' }),
+      )
+
+      await expect(removeBackground(REMOTE_IMAGE_URL)).rejects.toThrow(
+        'Failed to fetch image: 404',
+      )
+
+      // Worker should never be created if the fetch fails before it.
+      expect(lastWorker).toBeNull()
     })
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
+  describe('local URLs (blob: and data: — no proxy needed)', () => {
+    it('fetches blob: URLs directly without routing through the proxy', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(new Blob(['raw'])))
+
+      const promise = removeBackground(LOCAL_BLOB_URL)
+      await flushPromises()
+      triggerWorkerSuccess(new Blob())
+
+      await promise
+
+      expect(fetchSpy).toHaveBeenCalledOnce()
+      expect(fetchSpy.mock.calls[0]![0]).toBe(LOCAL_BLOB_URL)
+    })
+
+    it('fetches data: URIs directly without routing through the proxy', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(new Blob(['raw'])))
+
+      const promise = removeBackground(DATA_URI)
+      await flushPromises()
+      triggerWorkerSuccess(new Blob())
+
+      await promise
+
+      expect(fetchSpy).toHaveBeenCalledOnce()
+      expect(fetchSpy.mock.calls[0]![0]).toBe(DATA_URI)
+    })
   })
 
-  it('sends image_url for public URLs and returns a blob URL', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockOkResponse())
+  describe('Worker lifecycle', () => {
+    it('sends the image blob to the worker via postMessage', async () => {
+      const sourceBlob = new Blob(['source-image'], { type: 'image/jpeg' })
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(sourceBlob))
 
-    const result = await removeBackground(FAKE_IMAGE_URL)
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerSuccess(new Blob())
 
-    // Only the API call — no local fetch needed for public URLs
-    expect(fetchSpy).toHaveBeenCalledOnce()
-    const callArgs = fetchSpy.mock.calls[0]!
-    const url = callArgs[0]
-    const options = callArgs[1]
-    expect(url).toBe('https://api.remove.bg/v1.0/removebg')
-    expect(options?.method).toBe('POST')
-    expect((options?.headers as Record<string, string>)['X-Api-Key']).toBe(FAKE_API_KEY)
+      await promise
 
-    // Verify FormData contains image_url (not image_file) and size
-    const body = options?.body as FormData
-    expect(body.get('image_url')).toBe(FAKE_IMAGE_URL)
-    expect(body.has('image_file')).toBe(false)
-    expect(body.get('size')).toBe('auto')
+      expect(lastWorker!.postMessage).toHaveBeenCalledOnce()
+      const payload = lastWorker!.postMessage.mock.calls[0]![0]
+      expect(payload).toHaveProperty('blob')
+      expect(payload.blob).toBeInstanceOf(Blob)
+    })
 
-    expect(result).toBe(FAKE_BLOB_URL)
-    expect(URL.createObjectURL).toHaveBeenCalledOnce()
+    it('terminates the worker after a successful response', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob()))
+
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerSuccess(new Blob())
+
+      await promise
+
+      expect(lastWorker!.terminate).toHaveBeenCalledOnce()
+    })
+
+    it('terminates the worker after an error response', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob()))
+
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerError('Model failed to load')
+
+      await expect(promise).rejects.toThrow('Model failed to load')
+      expect(lastWorker!.terminate).toHaveBeenCalledOnce()
+    })
+
+    it('terminates the worker on a Worker onerror event', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob()))
+
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerLoadError('Failed to load worker script')
+
+      await expect(promise).rejects.toThrow('Failed to load worker script')
+      expect(lastWorker!.terminate).toHaveBeenCalledOnce()
+    })
+
+    it('creates a fresh Worker for each call (no shared state)', async () => {
+      // Each call must get its own Response — a Response body can only be read once.
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(new Response(new Blob(['raw']))),
+      )
+
+      // First call
+      const p1 = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      const worker1 = lastWorker
+      triggerWorkerSuccess(new Blob())
+      await p1
+
+      // Second call
+      const p2 = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      const worker2 = lastWorker
+      triggerWorkerSuccess(new Blob())
+      await p2
+
+      expect(worker1).not.toBe(worker2)
+    })
   })
 
-  it('sends image_file for blob URLs (uploaded/pasted images)', async () => {
-    const localBlob = new Blob(['fake-image'], { type: 'image/png' })
-    const localBlobResponse = new Response(localBlob)
-    const apiBlobResponse = mockOkResponse()
+  describe('error handling', () => {
+    it('rejects with the error string from the worker message', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob()))
 
-    // First call = local blob fetch, second call = API request
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(localBlobResponse)
-      .mockResolvedValueOnce(apiBlobResponse)
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerError('ONNX inference failed: out of memory')
 
-    const blobUrl = 'blob:http://localhost:5173/some-uuid'
-    const result = await removeBackground(blobUrl)
+      await expect(promise).rejects.toThrow('ONNX inference failed: out of memory')
+    })
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    it('rejects with a descriptive message when worker posts an empty response', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob()))
 
-    // First call: fetch the local blob
-    expect(fetchSpy.mock.calls[0]![0]).toBe(blobUrl)
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      // Post neither result nor error — malformed response
+      lastWorker!.onmessage!({ data: {} } as MessageEvent)
 
-    // Second call: API request with image_file
-    const apiCallOptions = fetchSpy.mock.calls[1]![1]
-    const body = apiCallOptions?.body as FormData
-    expect(body.has('image_file')).toBe(true)
-    expect(body.has('image_url')).toBe(false)
-    expect(body.get('size')).toBe('auto')
+      await expect(promise).rejects.toThrow('unexpected empty response')
+    })
 
-    expect(result).toBe(FAKE_BLOB_URL)
-  })
+    it('rejects when the onerror event has an empty message', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob()))
 
-  it('sends image_file for data URIs', async () => {
-    const localBlob = new Blob(['fake-image'], { type: 'image/png' })
-    const localBlobResponse = new Response(localBlob)
-    const apiBlobResponse = mockOkResponse()
+      const promise = removeBackground(REMOTE_IMAGE_URL)
+      await flushPromises()
+      triggerWorkerLoadError('')
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(localBlobResponse)
-      .mockResolvedValueOnce(apiBlobResponse)
+      await expect(promise).rejects.toThrow('Background removal worker encountered an error')
+    })
 
-    const dataUri = 'data:image/png;base64,iVBORw0KGgo='
-    await removeBackground(dataUri)
+    it('propagates network errors from the image fetch', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Network error'))
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(fetchSpy.mock.calls[0]![0]).toBe(dataUri)
-
-    const body = fetchSpy.mock.calls[1]![1]?.body as FormData
-    expect(body.has('image_file')).toBe(true)
-    expect(body.has('image_url')).toBe(false)
-  })
-
-  it('throws with status info when API responds with error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      mockErrorResponse(402, 'Payment Required'),
-    )
-
-    await expect(removeBackground(FAKE_IMAGE_URL)).rejects.toThrow(
-      'remove.bg API error: 402 Payment Required',
-    )
-  })
-
-  it('throws immediately when API key is missing', async () => {
-    vi.stubEnv('VITE_REMOVEBG_API_KEY', '')
-
-    await expect(removeBackground(FAKE_IMAGE_URL)).rejects.toThrow(
-      'VITE_REMOVEBG_API_KEY is not set',
-    )
-  })
-
-  it('throws immediately when API key env var is undefined', async () => {
-    vi.unstubAllEnvs()
-    // Ensure the env var is truly absent
-    vi.stubEnv('VITE_REMOVEBG_API_KEY', '')
-
-    await expect(removeBackground(FAKE_IMAGE_URL)).rejects.toThrow(
-      'VITE_REMOVEBG_API_KEY is not set',
-    )
-  })
-
-  it('propagates network errors from fetch', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
-
-    await expect(removeBackground(FAKE_IMAGE_URL)).rejects.toThrow('Failed to fetch')
+      await expect(removeBackground(REMOTE_IMAGE_URL)).rejects.toThrow('Network error')
+      expect(lastWorker).toBeNull()
+    })
   })
 })
