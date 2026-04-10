@@ -18,6 +18,7 @@ function makeProduct(overrides: Partial<ParsedProduct> = {}): ParsedProduct {
     isVeg: true,
     isRelated: false,
     parentId: null,
+    quantitySticker: null,
     provider: mockProvider,
     ...overrides,
   }

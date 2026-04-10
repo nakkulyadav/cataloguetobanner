@@ -2,14 +2,27 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import React from 'react'
 import BannerControls from '@/components/BannerControls/BannerControls'
+import type { ImageSource } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+function makeSource(overrides: Partial<ImageSource> = {}): ImageSource {
+  return {
+    id: 'catalogue',
+    label: 'Catalogue',
+    originalUrl: 'https://example.com/product.png',
+    bgRemovedUrl: null,
+    bgRemovalStatus: 'idle',
+    showBgRemoved: false,
+    source: 'catalogue',
+    ...overrides,
+  }
+}
+
 /**
- * Minimal props needed to render BannerControls without errors.
- * Override only what's relevant to each test.
+ * Minimal props to render BannerControls without errors.
  */
 function makeProps(overrides: Partial<React.ComponentProps<typeof BannerControls>> = {}) {
   return {
@@ -47,16 +60,22 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof BannerControls
     onBrandLogoChange: vi.fn(),
     logoScale: 1,
     onLogoScaleChange: vi.fn(),
-    productImageOverride: null,
-    onProductImageChange: vi.fn(),
     productImageScale: 1,
     onProductImageScaleChange: vi.fn(),
-    hasBgRemovedProduct: false,
-    showBgRemovedProduct: false,
-    onToggleBgRemovedProduct: vi.fn(),
+    // ISL props
+    productImageSources: [],
+    activeProductImageSourceId: null,
+    onAddProductImage: vi.fn(),
+    onRemoveProductImageSource: vi.fn(),
+    onSelectProductImageSource: vi.fn(),
+    onToggleSourceBgRemoved: vi.fn(),
     hasBgRemovedLogo: false,
     showBgRemovedLogo: false,
     onToggleBgRemovedLogo: vi.fn(),
+    showQuantitySticker: false,
+    onQuantityStickerToggle: vi.fn(),
+    quantityStickerText: null,
+    onQuantityStickerTextChange: vi.fn(),
     ...overrides,
   }
 }
@@ -69,13 +88,11 @@ describe('BannerControls — zoom sliders', () => {
   it('renders the logo zoom slider when Brand Logo is visible', () => {
     render(<BannerControls {...makeProps({ showLogo: true })} />)
     const sliders = screen.getAllByRole('slider')
-    // Logo slider is the first one rendered (Brand Logo section comes first)
     expect(sliders.length).toBeGreaterThanOrEqual(1)
   })
 
   it('always renders the product image zoom slider', () => {
     render(<BannerControls {...makeProps()} />)
-    // Product Image section is always visible — at least one slider present
     const sliders = screen.getAllByRole('slider')
     expect(sliders.length).toBeGreaterThanOrEqual(1)
   })
@@ -113,70 +130,127 @@ describe('BannerControls — zoom sliders', () => {
 })
 
 // ---------------------------------------------------------------------------
-// IT-23 — bg-removed version toggle (IT-11/IT-12)
+// ISL-9c — ImageSourceList integration
 // ---------------------------------------------------------------------------
 
-describe('BannerControls — bg-removed version toggle (IT-23)', () => {
-  it('renders the product image version toggle when hasBgRemovedProduct is true', () => {
-    render(<BannerControls {...makeProps({ hasBgRemovedProduct: true })} />)
-    // BgVersionPill renders a role="switch" button
-    const switches = screen.getAllByRole('switch')
-    expect(switches.length).toBeGreaterThanOrEqual(1)
+describe('BannerControls — ImageSourceList (ISL-9c)', () => {
+  it('renders ImageSourceList thumbnails when productImageSources is non-empty', () => {
+    const sources = [makeSource()]
+    render(<BannerControls {...makeProps({ productImageSources: sources, activeProductImageSourceId: 'catalogue' })} />)
+    // Thumbnail chip rendered as a button with aria-label = source label
+    expect(screen.getByRole('button', { name: 'Catalogue' })).toBeInTheDocument()
   })
 
-  it('does not render the product image version toggle when hasBgRemovedProduct is false', () => {
-    render(<BannerControls {...makeProps({ hasBgRemovedProduct: false })} />)
-    // With hasBgRemovedProduct false and showLogo false, any remaining switches
-    // are not from the bg-removed product pill
-    // Verify no "Original" / "BG Removed" text from the pill
-    expect(screen.queryByText('Original')).toBeNull()
-    expect(screen.queryByText('BG Removed')).toBeNull()
+  it('does not render source thumbnails when productImageSources is empty', () => {
+    render(<BannerControls {...makeProps({ productImageSources: [] })} />)
+    expect(screen.queryByRole('button', { name: 'Catalogue' })).toBeNull()
   })
 
-  it('calls onToggleBgRemovedProduct when the product image toggle is clicked', () => {
-    const onToggle = vi.fn()
+  it('calls onSelectProductImageSource when a thumbnail is clicked', () => {
+    const onSelect = vi.fn()
+    const sources = [makeSource(), makeSource({ id: 'user-1', label: 'Upload 1', source: 'user' })]
     render(
       <BannerControls
         {...makeProps({
-          hasBgRemovedProduct: true,
-          showBgRemovedProduct: false,
-          onToggleBgRemovedProduct: onToggle,
+          productImageSources: sources,
+          activeProductImageSourceId: 'user-1',
+          onSelectProductImageSource: onSelect,
         })}
       />,
     )
-    // BgVersionPill shows "Original" when showBgRemoved is false
-    fireEvent.click(screen.getByText('Original'))
-    expect(onToggle).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Catalogue' }))
+    expect(onSelect).toHaveBeenCalledWith('catalogue')
   })
 
+  it('shows remove button on user sources but not on catalogue source', () => {
+    const sources = [
+      makeSource({ id: 'catalogue', label: 'Catalogue', source: 'catalogue' }),
+      makeSource({ id: 'user-1', label: 'Upload 1', source: 'user' }),
+    ]
+    render(
+      <BannerControls
+        {...makeProps({
+          productImageSources: sources,
+          activeProductImageSourceId: 'catalogue',
+        })}
+      />,
+    )
+    // Remove button exists for user source
+    expect(screen.getByRole('button', { name: 'Remove image' })).toBeInTheDocument()
+    // Only one remove button (not for catalogue)
+    expect(screen.getAllByRole('button', { name: 'Remove image' })).toHaveLength(1)
+  })
+
+  it('calls onRemoveProductImageSource when remove button is clicked', () => {
+    const onRemove = vi.fn()
+    const sources = [
+      makeSource({ id: 'catalogue', label: 'Catalogue', source: 'catalogue' }),
+      makeSource({ id: 'user-1', label: 'Upload 1', source: 'user' }),
+    ]
+    render(
+      <BannerControls
+        {...makeProps({
+          productImageSources: sources,
+          activeProductImageSourceId: 'user-1',
+          onRemoveProductImageSource: onRemove,
+        })}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image' }))
+    expect(onRemove).toHaveBeenCalledWith('user-1')
+  })
+
+  it('shows BgVersionPill when active source bgRemovalStatus is done', () => {
+    const sources = [
+      makeSource({ bgRemovalStatus: 'done', bgRemovedUrl: 'blob:bg', showBgRemoved: true }),
+    ]
+    render(
+      <BannerControls
+        {...makeProps({
+          productImageSources: sources,
+          activeProductImageSourceId: 'catalogue',
+        })}
+      />,
+    )
+    // BgVersionPill renders "BG Removed" text
+    expect(screen.getByText('BG Removed')).toBeInTheDocument()
+  })
+
+  it('does not show BgVersionPill when active source bgRemovalStatus is not done', () => {
+    const sources = [makeSource({ bgRemovalStatus: 'idle' })]
+    render(
+      <BannerControls
+        {...makeProps({
+          productImageSources: sources,
+          activeProductImageSourceId: 'catalogue',
+        })}
+      />,
+    )
+    // BgVersionPill shows "BG Removed" text; absent here since status is not done
+    expect(screen.queryByText('BG Removed')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Logo bg-version toggle (unchanged from before)
+// ---------------------------------------------------------------------------
+
+describe('BannerControls — logo bg-removed toggle', () => {
   it('renders the logo version toggle when hasBgRemovedLogo is true and showLogo is true', () => {
     render(
       <BannerControls
-        {...makeProps({
-          showLogo: true,
-          hasBgRemovedLogo: true,
-          showBgRemovedLogo: true,
-        })}
+        {...makeProps({ showLogo: true, hasBgRemovedLogo: true, showBgRemovedLogo: true })}
       />,
     )
-    // At least one BgVersionPill rendered
-    expect(screen.getAllByRole('switch').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('BG Removed')).toBeInTheDocument()
   })
 
   it('does not render the logo version toggle when hasBgRemovedLogo is false', () => {
-    render(
-      <BannerControls
-        {...makeProps({
-          showLogo: true,
-          hasBgRemovedLogo: false,
-        })}
-      />,
-    )
-    // No "BG Removed" text when pill is hidden
+    render(<BannerControls {...makeProps({ showLogo: true, hasBgRemovedLogo: false })} />)
     expect(screen.queryByText('BG Removed')).toBeNull()
   })
 
-  it('calls onToggleBgRemovedLogo when the logo version toggle is clicked', () => {
+  it('calls onToggleBgRemovedLogo when the logo toggle is clicked', () => {
     const onToggle = vi.fn()
     render(
       <BannerControls
@@ -185,13 +259,85 @@ describe('BannerControls — bg-removed version toggle (IT-23)', () => {
           hasBgRemovedLogo: true,
           showBgRemovedLogo: false,
           onToggleBgRemovedLogo: onToggle,
-          hasBgRemovedProduct: false,
         })}
       />,
     )
-    // Only the logo pill is shown here, which shows "Original" when showBgRemovedLogo is false
-    // There may be multiple "Original" texts if product pill is also shown — but hasBgRemovedProduct is false
     fireEvent.click(screen.getByText('Original'))
     expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// QST-13: Quantity Sticker section
+// ---------------------------------------------------------------------------
+
+describe('BannerControls — Quantity Sticker (QST-13)', () => {
+  it('renders the Quantity Sticker section header', () => {
+    render(<BannerControls {...makeProps()} />)
+    expect(screen.getByText(/quantity sticker/i)).toBeInTheDocument()
+  })
+
+  it('does not render the text input when showQuantitySticker is false', () => {
+    render(<BannerControls {...makeProps({ showQuantitySticker: false })} />)
+    expect(screen.queryByPlaceholderText(/pack of/i)).toBeNull()
+  })
+
+  it('renders the text input when showQuantitySticker is true', () => {
+    render(
+      <BannerControls
+        {...makeProps({ showQuantitySticker: true, quantityStickerText: 'PACK OF 5' })}
+      />,
+    )
+    expect(screen.getByDisplayValue('PACK OF 5')).toBeInTheDocument()
+  })
+
+  it('shows empty input when showQuantitySticker is true but quantityStickerText is null', () => {
+    render(
+      <BannerControls
+        {...makeProps({ showQuantitySticker: true, quantityStickerText: null })}
+      />,
+    )
+    expect(screen.getByPlaceholderText(/pack of/i)).toBeInTheDocument()
+  })
+
+  it('calls onQuantityStickerToggle when the toggle is clicked', () => {
+    const onToggle = vi.fn()
+    render(
+      <BannerControls {...makeProps({ onQuantityStickerToggle: onToggle })} />,
+    )
+    // The Quantity Sticker section has its own TogglePill — click the "Off" segment
+    const switches = screen.getAllByRole('switch')
+    fireEvent.click(switches[switches.length - 1]!)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onQuantityStickerTextChange with the new value when input changes', () => {
+    const onChange = vi.fn()
+    render(
+      <BannerControls
+        {...makeProps({
+          showQuantitySticker: true,
+          quantityStickerText: 'PACK OF 5',
+          onQuantityStickerTextChange: onChange,
+        })}
+      />,
+    )
+    fireEvent.change(screen.getByDisplayValue('PACK OF 5'), { target: { value: 'PACK OF 10' } })
+    expect(onChange).toHaveBeenCalledWith('PACK OF 10')
+  })
+
+  it('calls onQuantityStickerTextChange with null when input is cleared', () => {
+    const onChange = vi.fn()
+    render(
+      <BannerControls
+        {...makeProps({
+          showQuantitySticker: true,
+          quantityStickerText: 'PACK OF 5',
+          onQuantityStickerTextChange: onChange,
+        })}
+      />,
+    )
+    fireEvent.change(screen.getByDisplayValue('PACK OF 5'), { target: { value: '' } })
+    expect(onChange).toHaveBeenCalledWith(null)
   })
 })

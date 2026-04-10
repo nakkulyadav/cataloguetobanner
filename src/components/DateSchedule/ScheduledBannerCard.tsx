@@ -178,21 +178,12 @@ export default function ScheduledBannerCard({
 
   const displayState = overrideBannerState ?? entry.bannerState
 
-  // Inject bg-removed URLs into the display state per-field based on individual toggles
-  const effectiveDisplayState: typeof displayState = displayState && (
-    (entry.showBgRemovedProduct && entry.bgRemovedProductImageUrl) ||
-      (entry.showBgRemovedLogo && entry.bgRemovedLogoUrl)
-      ? {
-        ...displayState,
-        ...(entry.showBgRemovedProduct && entry.bgRemovedProductImageUrl
-          ? { productImageOverride: entry.bgRemovedProductImageUrl }
-          : {}),
-        ...(entry.showBgRemovedLogo && entry.bgRemovedLogoUrl
-          ? { brandLogoOverride: entry.bgRemovedLogoUrl }
-          : {}),
-      }
+  // Inject bg-removed logo URL when the toggle is on.
+  // Product image bg-removal is handled inside BannerPreview via productImageSources.
+  const effectiveDisplayState: typeof displayState =
+    entry.showBgRemovedLogo && entry.bgRemovedLogoUrl
+      ? { ...displayState, brandLogoOverride: entry.bgRemovedLogoUrl }
       : displayState
-  )
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -233,14 +224,14 @@ export default function ScheduledBannerCard({
             {isEditing ? 'Save' : 'Edit'}
           </button>
         )}
-        {onRemoveBg && (entry.bgRemovalStatus === 'idle' || entry.bgRemovalStatus === 'error') && (
+        {onRemoveBg && entry.bgRemovalStatus === 'error' && (
           <button
             type="button"
             onClick={onRemoveBg}
             disabled={isRemovingBg}
             className="rounded-lg px-4 py-2 text-sm font-medium transition-interaction border border-[var(--border-muted)] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
-            {entry.bgRemovalStatus === 'error' ? 'Retry Bg' : 'Remove Background'}
+            Retry Bg
           </button>
         )}
         <ExportPanel

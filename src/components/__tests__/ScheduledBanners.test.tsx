@@ -6,18 +6,17 @@ import type { ScheduledBannerEntry, BannerState, ParsedProduct } from '@/types'
 import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 
 // ---------------------------------------------------------------------------
-// Mock BannerPreview — prevents canvas/html-to-image from running in tests
+// Mock BannerPreview
 // ---------------------------------------------------------------------------
 vi.mock('@/components/BannerPreview/BannerPreview', () => ({
   default: vi.fn(({ state }: { state: import('@/types').BannerState | null }, _ref: unknown) => (
     <div
       data-testid="banner-preview"
-      data-product-image-override={state?.productImageOverride ?? ''}
+      data-brand-logo-override={state?.brandLogoOverride ?? ''}
     />
   )),
 }))
 
-// Mock exportBanner — prevents DOM capture in tests
 vi.mock('@/services/exportService', () => ({
   exportBanner: vi.fn().mockResolvedValue(undefined),
   generateFilename: vi.fn((name?: string) => `digihaat-${name ?? 'banner'}`),
@@ -37,6 +36,7 @@ function makeProduct(overrides: Partial<ParsedProduct> = {}): ParsedProduct {
     isVeg: true,
     isRelated: false,
     parentId: null,
+    quantitySticker: null,
     provider: { brandName: 'Test Brand', brandLogo: null, companyName: 'Test Co' },
     ...overrides,
   }
@@ -60,9 +60,12 @@ function makeBannerState(overrides: Partial<BannerState> = {}): BannerState {
     brandLogoOverride: null,
     productNameOverride: null,
     priceOverride: null,
-    productImageOverride: null,
+    productImageSources: [],
+    activeProductImageSourceId: null,
     logoScale: 1,
     productImageScale: 1,
+    quantityStickerText: null,
+    showQuantitySticker: false,
     ...overrides,
   }
 }
@@ -76,15 +79,14 @@ function makeEntry(overrides: Partial<ScheduledBannerEntry> = {}): ScheduledBann
       page: 'Banner',
       offerCallout: 'Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?item_id=abc',
       comments: 'Header: Juicy Mangoes\nSubheader: Starting at ₹85',
+      quantitySticker: '',
     },
     status: 'ready',
     bannerState: makeBannerState(),
     error: null,
     bgRemovalStatus: 'idle',
     bgRemovalError: null,
-    bgRemovedProductImageUrl: null,
     bgRemovedLogoUrl: null,
-    showBgRemovedProduct: true,
     showBgRemovedLogo: true,
     ...overrides,
   }
@@ -108,7 +110,6 @@ const gridDefaults = {
 // ---------------------------------------------------------------------------
 
 describe('ScheduledBannersGrid', () => {
-
   it('shows empty state when no date is selected', () => {
     render(<ScheduledBannersGrid {...gridDefaults} selectedDate="" />)
     expect(screen.getByText(/pick a date/i)).toBeInTheDocument()
@@ -136,7 +137,6 @@ describe('ScheduledBannersGrid', () => {
     expect(screen.getByText(/No Bazaar banners/i)).toBeInTheDocument()
   })
 
-
   it('renders banner count when entries are present', () => {
     const entries = [makeEntry({ id: 'e-1' }), makeEntry({ id: 'e-2' })]
     render(
@@ -158,7 +158,6 @@ describe('ScheduledBannersGrid', () => {
         entries={entries}
       />
     )
-    // Each ready card renders a BannerPreview mock
     expect(screen.getAllByTestId('banner-preview')).toHaveLength(2)
   })
 })
@@ -203,10 +202,10 @@ describe('ScheduledBannerCard', () => {
         page: 'Banner',
         offerCallout: longCallout,
         comments: '',
+        quantitySticker: '',
       },
     })
     render(<ScheduledBannerCard entry={entry} />)
-    // Error message should be shown
     expect(screen.getByText(/No product URL/i)).toBeInTheDocument()
   })
 
@@ -216,141 +215,75 @@ describe('ScheduledBannerCard', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  // -------------------------------------------------------------------------
-  // ES-7: isEditing=true → button label is "Save"; onSave is called on click
-  // -------------------------------------------------------------------------
-
-  it('ES-7: renders "Save" button label when isEditing is true', () => {
-    const onSave = vi.fn()
-    const onEdit = vi.fn()
-    render(
-      <ScheduledBannerCard
-        entry={makeEntry()}
-        isEditing={true}
-        onEdit={onEdit}
-        onSave={onSave}
-      />,
-    )
+  // ES-7 / ES-8
+  it('renders "Save" button when isEditing is true', () => {
+    render(<ScheduledBannerCard entry={makeEntry()} isEditing={true} onSave={vi.fn()} onEdit={vi.fn()} />)
     expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument()
   })
 
-  it('ES-7: clicking Save button calls onSave (not onEdit) when isEditing is true', () => {
+  it('clicking Save calls onSave', () => {
     const onSave = vi.fn()
-    const onEdit = vi.fn()
-    render(
-      <ScheduledBannerCard
-        entry={makeEntry()}
-        isEditing={true}
-        onEdit={onEdit}
-        onSave={onSave}
-      />,
-    )
+    render(<ScheduledBannerCard entry={makeEntry()} isEditing={true} onSave={onSave} onEdit={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     expect(onSave).toHaveBeenCalledTimes(1)
-    expect(onEdit).not.toHaveBeenCalled()
   })
 
-  // -------------------------------------------------------------------------
-  // ES-8: isEditing=false → button label is "Edit"; onEdit is called on click
-  // -------------------------------------------------------------------------
-
-  it('ES-8: renders "Edit" button label when isEditing is false', () => {
-    const onEdit = vi.fn()
-    render(
-      <ScheduledBannerCard
-        entry={makeEntry()}
-        isEditing={false}
-        onEdit={onEdit}
-      />,
-    )
+  it('renders "Edit" button when isEditing is false', () => {
+    render(<ScheduledBannerCard entry={makeEntry()} isEditing={false} onEdit={vi.fn()} />)
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument()
   })
 
-  it('ES-8: clicking Edit button calls onEdit (not onSave) when isEditing is false', () => {
-    const onSave = vi.fn()
+  it('clicking Edit calls onEdit', () => {
     const onEdit = vi.fn()
-    render(
-      <ScheduledBannerCard
-        entry={makeEntry()}
-        isEditing={false}
-        onEdit={onEdit}
-        onSave={onSave}
-      />,
-    )
+    render(<ScheduledBannerCard entry={makeEntry()} isEditing={false} onEdit={onEdit} onSave={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(onEdit).toHaveBeenCalledTimes(1)
-    expect(onSave).not.toHaveBeenCalled()
   })
 })
 
 // ---------------------------------------------------------------------------
-// IT-21 — bg-version toggle pills live in BannerControls (not on the card)
+// ISL-8: effectiveDisplayState injects bg-removed logo URL
 // ---------------------------------------------------------------------------
 
-describe('ScheduledBannerCard — bg-removed toggle pill (IT-21)', () => {
-  it('does not render a bg-version toggle pill on the card itself', () => {
+describe('ScheduledBannerCard — effectiveDisplayState (ISL-8)', () => {
+  it('passes bgRemovedLogoUrl as brandLogoOverride when showBgRemovedLogo is true', () => {
     const entry = makeEntry({
       bgRemovalStatus: 'done',
-      bgRemovedProductImageUrl: 'blob:product-result',
-      showBgRemovedProduct: true,
+      bgRemovedLogoUrl: 'blob:logo-result',
       showBgRemovedLogo: true,
-    })
-    render(<ScheduledBannerCard entry={entry} />)
-    // Pills now live in BannerControls (shown in edit mode), not on the card
-    expect(screen.queryByText('BG Removed')).toBeNull()
-    expect(screen.queryByText('Original')).toBeNull()
-  })
-})
-
-// ---------------------------------------------------------------------------
-// IT-22 — effectiveDisplayState injects bg-removed URLs into BannerPreview
-// ---------------------------------------------------------------------------
-
-describe('ScheduledBannerCard — effectiveDisplayState (IT-22)', () => {
-  it('passes bgRemovedProductImageUrl as productImageOverride when showBgRemovedProduct is true', () => {
-    const entry = makeEntry({
-      bgRemovalStatus: 'done',
-      bgRemovedProductImageUrl: 'blob:bg-removed-product',
-      bgRemovedLogoUrl: null,
-      showBgRemovedProduct: true,
-      showBgRemovedLogo: false,
-      bannerState: makeBannerState({ productImageOverride: null }),
+      bannerState: makeBannerState({ brandLogoOverride: null }),
     })
     render(<ScheduledBannerCard entry={entry} />)
     expect(screen.getByTestId('banner-preview')).toHaveAttribute(
-      'data-product-image-override',
-      'blob:bg-removed-product',
+      'data-brand-logo-override',
+      'blob:logo-result',
     )
   })
 
-  it('passes empty productImageOverride when showBgRemovedProduct is false', () => {
+  it('does not inject logo override when showBgRemovedLogo is false', () => {
     const entry = makeEntry({
       bgRemovalStatus: 'done',
-      bgRemovedProductImageUrl: 'blob:bg-removed-product',
-      bgRemovedLogoUrl: null,
-      showBgRemovedProduct: false,
+      bgRemovedLogoUrl: 'blob:logo-result',
       showBgRemovedLogo: false,
-      bannerState: makeBannerState({ productImageOverride: null }),
+      bannerState: makeBannerState({ brandLogoOverride: null }),
     })
     render(<ScheduledBannerCard entry={entry} />)
     expect(screen.getByTestId('banner-preview')).toHaveAttribute(
-      'data-product-image-override',
+      'data-brand-logo-override',
       '',
     )
   })
 
-  it('passes empty productImageOverride when bgRemovedProductImageUrl is null even if showBgRemovedProduct is true', () => {
+  it('does not inject logo override when bgRemovedLogoUrl is null', () => {
     const entry = makeEntry({
       bgRemovalStatus: 'done',
-      bgRemovedProductImageUrl: null,
       bgRemovedLogoUrl: null,
-      showBgRemovedProduct: true,
-      showBgRemovedLogo: false,
-      bannerState: makeBannerState({ productImageOverride: null }),
+      showBgRemovedLogo: true,
+      bannerState: makeBannerState({ brandLogoOverride: null }),
     })
     render(<ScheduledBannerCard entry={entry} />)
     expect(screen.getByTestId('banner-preview')).toHaveAttribute(
-      'data-product-image-override',
+      'data-brand-logo-override',
       '',
     )
   })

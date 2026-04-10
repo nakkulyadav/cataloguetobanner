@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatPrice,
+  formatQuantitySticker,
   parseApiItem,
   parseApiItems,
   extractProviders,
@@ -602,5 +603,84 @@ describe('parseApiItem — price extraction', () => {
     expect(product.price).toBeDefined()
     expect(product.price!.mrp).toBe('₹200')
     expect(product.price!.sellingPrice).toBe('₹100')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// QST-11: formatQuantitySticker
+// ---------------------------------------------------------------------------
+
+describe('formatQuantitySticker', () => {
+  it('returns "PACK OF N" for unit=PACK with a positive integer value', () => {
+    expect(formatQuantitySticker({ measure: { unit: 'PACK', value: '5' } })).toBe('PACK OF 5')
+  })
+
+  it('is case-insensitive for the unit field', () => {
+    expect(formatQuantitySticker({ measure: { unit: 'pack', value: '3' } })).toBe('PACK OF 3')
+    expect(formatQuantitySticker({ measure: { unit: 'Pack', value: '10' } })).toBe('PACK OF 10')
+  })
+
+  it('returns null for non-PACK units', () => {
+    expect(formatQuantitySticker({ measure: { unit: 'KG', value: '2' } })).toBeNull()
+    expect(formatQuantitySticker({ measure: { unit: 'L', value: '1' } })).toBeNull()
+    expect(formatQuantitySticker({ measure: { unit: 'unit', value: '6' } })).toBeNull()
+  })
+
+  it('returns null when measure is missing', () => {
+    expect(formatQuantitySticker({})).toBeNull()
+    expect(formatQuantitySticker(undefined)).toBeNull()
+  })
+
+  it('returns null when value is not a positive integer', () => {
+    expect(formatQuantitySticker({ measure: { unit: 'PACK', value: '0' } })).toBeNull()
+    expect(formatQuantitySticker({ measure: { unit: 'PACK', value: '-1' } })).toBeNull()
+    expect(formatQuantitySticker({ measure: { unit: 'PACK', value: 'abc' } })).toBeNull()
+  })
+
+  it('parseApiItem auto-detects PACK sticker from item_details.quantity.unitized', () => {
+    const item = makeApiItem({
+      item_details: {
+        descriptor: { name: 'Pack Product', images: ['https://example.com/img.png'] },
+        quantity: { unitized: { measure: { unit: 'PACK', value: '5' } } },
+      },
+    })
+    const product = parseApiItem(item)!
+    expect(product.quantitySticker).toBe('PACK OF 5')
+  })
+
+  it('parseApiItem falls back to raw_source.item_details.quantity.unitized', () => {
+    const item = makeApiItem({
+      item_details: {
+        descriptor: { name: 'Raw Pack', images: ['https://example.com/img.png'] },
+      },
+      raw_source: {
+        item_details: {
+          quantity: { unitized: { measure: { unit: 'PACK', value: '3' } } },
+        },
+      },
+    })
+    const product = parseApiItem(item)!
+    expect(product.quantitySticker).toBe('PACK OF 3')
+  })
+
+  it('parseApiItem sets quantitySticker to null for non-PACK unit', () => {
+    const item = makeApiItem({
+      item_details: {
+        descriptor: { name: 'KG Product', images: ['https://example.com/img.png'] },
+        quantity: { unitized: { measure: { unit: 'KG', value: '2' } } },
+      },
+    })
+    const product = parseApiItem(item)!
+    expect(product.quantitySticker).toBeNull()
+  })
+
+  it('parseApiItem sets quantitySticker to null when quantity field is missing', () => {
+    const item = makeApiItem({
+      item_details: {
+        descriptor: { name: 'No Qty', images: ['https://example.com/img.png'] },
+      },
+    })
+    const product = parseApiItem(item)!
+    expect(product.quantitySticker).toBeNull()
   })
 })

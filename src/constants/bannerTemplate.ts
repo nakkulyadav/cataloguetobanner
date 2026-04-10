@@ -183,3 +183,19 @@ export const PRODUCT_IMAGE = {
   height: 270,
   bottomOffset: 1,
 };
+
+// --- Quantity Sticker (pill overlaid bottom-right on the product image) ---
+export const QUANTITY_STICKER = {
+  /** Distance from right edge — aligns with the product image right edge */
+  right: BANNER_WIDTH - (PRODUCT_IMAGE.centerX + PRODUCT_IMAGE.width / 2), // 22px
+  /** Distance from bottom — sits just above the canvas floor */
+  bottom: PRODUCT_IMAGE.bottomOffset + 20, // 21px
+  paddingX: 10,
+  paddingY: 6,
+  borderRadius: 36,
+  fontSize: 14,
+  fontWeight: 700,
+  fontFamily: '"Inter", sans-serif',
+  color: '#FFFFFF',
+  lineHeight: 1.2,
+};

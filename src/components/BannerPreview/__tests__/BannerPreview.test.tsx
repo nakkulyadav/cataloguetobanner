@@ -36,9 +36,12 @@ function makeState(overrides: Partial<BannerState> = {}): BannerState {
     brandLogoOverride: null,
     productNameOverride: null,
     priceOverride: null,
-    productImageOverride: null,
+    productImageSources: [],
+    activeProductImageSourceId: null,
     logoScale: 1,
     productImageScale: 1,
+    quantityStickerText: null,
+    showQuantitySticker: false,
     ...overrides,
   }
 }
@@ -58,9 +61,17 @@ describe('BannerPreview — product image left-edge clamping (IC)', () => {
   /** State with a visible product image at the given zoom scale. */
   function makeImageState(productImageScale: number): BannerState {
     return makeState({
-      // productImageOverride drives hasValidImage = true without needing a
-      // real ParsedProduct, keeping the test self-contained.
-      productImageOverride: 'https://example.com/product.png',
+      // A 'user' source makes hasValidImage=true without needing a real ParsedProduct.
+      productImageSources: [{
+        id: 'user-1',
+        label: 'Upload 1',
+        originalUrl: 'https://example.com/product.png',
+        bgRemovedUrl: null,
+        bgRemovalStatus: 'idle',
+        showBgRemoved: false,
+        source: 'user',
+      }],
+      activeProductImageSourceId: 'user-1',
       productImageScale,
     })
   }

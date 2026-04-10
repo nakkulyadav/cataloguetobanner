@@ -1,6 +1,22 @@
 import type { ParsedProduct, ProductPrice, ProductGroup, ApiCatalogItem, ApiProvider } from '@/types'
 
 /**
+ * Derives the quantity sticker text from an item's unitized measure field.
+ * Returns "PACK OF N" when the unit is "PACK" and the value is a positive integer.
+ * Returns null for all other units or when the field is missing/invalid.
+ */
+export function formatQuantitySticker(
+  unitized: { measure?: { unit: string; value: string } } | undefined,
+): string | null {
+  const measure = unitized?.measure
+  if (!measure) return null
+  if (measure.unit.toUpperCase() !== 'PACK') return null
+  const n = parseInt(measure.value, 10)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return `PACK OF ${n}`
+}
+
+/**
  * Formats a raw price value into a display string with ₹ prefix and comma separators.
  * Strips decimals (e.g. "499.0" → "₹499") and adds Indian-style commas (e.g. 1299 → "₹1,299").
  */
@@ -98,6 +114,9 @@ export function parseApiItem(item: ApiCatalogItem): ParsedProduct | null {
     parentId,
     price,
     provider: { brandName, brandLogo, companyName },
+    quantitySticker:
+      formatQuantitySticker(item.item_details?.quantity?.unitized) ??
+      formatQuantitySticker(item.raw_source?.item_details?.quantity?.unitized),
   }
 }
 

@@ -26,7 +26,6 @@ vi.mock('@/services/removeBackgroundService', () => ({
   removeBackground: vi.fn(),
 }))
 
-// catalogueParser.parseApiItems is called internally — use a real minimal impl
 vi.mock('@/services/catalogueParser', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/catalogueParser')>()
   return actual
@@ -43,6 +42,7 @@ function makeSheetRow(overrides: Partial<SheetRow> = {}): SheetRow {
     page: 'Banner',
     offerCallout: 'Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
     comments: 'Header: Juicy Mangoes\nSubheader: Starting at ₹85',
+    quantitySticker: '',
     ...overrides,
   }
 }
@@ -85,8 +85,6 @@ function makeApiResponse(items: ApiCatalogItem[]): ApiPaginatedResponse<ApiCatal
 
 describe('useScheduledBanners', () => {
   beforeEach(() => {
-    // resetAllMocks clears both call history AND mock implementations so that
-    // stale .mockReturnValue() chains from one test never bleed into the next.
     vi.resetAllMocks()
   })
 
@@ -110,7 +108,6 @@ describe('useScheduledBanners', () => {
   })
 
   it('sets isFetching=true while sheet is loading', async () => {
-    // fetchSheetRows never resolves during this check
     vi.mocked(sheetsService.fetchSheetRows).mockReturnValue(new Promise(() => {}))
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([])
 
@@ -151,7 +148,6 @@ describe('useScheduledBanners', () => {
     )
     vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
     vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
-    // API never resolves — entries stay in loading state
     vi.mocked(apiService.searchCatalog).mockReturnValue(new Promise(() => {}))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -232,8 +228,6 @@ describe('useScheduledBanners', () => {
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
 
-    // Use expect() inside waitFor so it retries on failure — a plain boolean
-    // return value does NOT cause waitFor to retry, only thrown errors do.
     await waitFor(() => {
       expect(result.current.entries.length).toBeGreaterThan(0)
       expect(result.current.entries.every(e => e.status !== 'loading')).toBe(true)
@@ -253,10 +247,236 @@ describe('useScheduledBanners', () => {
     act(() => { result.current.setDate('2026-03-30') })
     await waitFor(() => expect(result.current.isFetching).toBe(false))
 
-    // Change date — entries should clear immediately
     act(() => { result.current.setDate('2026-03-31') })
     expect(result.current.entries).toHaveLength(0)
     expect(result.current.fetchError).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ISL-9b: resolveEntry initialises productImageSources
+// ---------------------------------------------------------------------------
+
+describe('ISL: resolveEntry initialises productImageSources', () => {
+  beforeEach(() => { vi.resetAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('creates catalogue source with idle status when product has imageUrl', async () => {
+    const row = makeSheetRow()
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    const bs = result.current.entries[0]!.bannerState!
+    expect(bs.productImageSources).toHaveLength(1)
+    expect(bs.productImageSources[0]!.id).toBe('catalogue')
+    expect(bs.productImageSources[0]!.source).toBe('catalogue')
+    expect(bs.productImageSources[0]!.originalUrl).toBe('https://example.com/mango.jpg')
+    // bgRemovalStatus starts as 'idle' but auto-removal runs immediately in tests
+    expect(['idle', 'removing', 'done', 'error']).toContain(bs.productImageSources[0]!.bgRemovalStatus)
+    expect(bs.activeProductImageSourceId).toBe('catalogue')
+  })
+
+  it('leaves productImageSources empty when product has no imageUrl', async () => {
+    const itemNoImg = makeApiItem('item-1')
+    itemNoImg.item_details.descriptor.images = []
+    const row = makeSheetRow()
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([itemNoImg]))
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    const bs = result.current.entries[0]!.bannerState!
+    expect(bs.productImageSources).toEqual([])
+    expect(bs.activeProductImageSourceId).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// QST-12: resolveEntry — quantity sticker passthrough from sheet row
+// ---------------------------------------------------------------------------
+
+describe('QST-12: resolveEntry — quantity sticker from sheet row', () => {
+  beforeEach(() => { vi.resetAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  async function resolveWithSticker(quantitySticker: string) {
+    const row = makeSheetRow({ quantitySticker })
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+    vi.mocked(removeBackgroundService.removeBackground).mockResolvedValue('blob:removed')
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+    return result.current.entries[0]!.bannerState!
+  }
+
+  it('sets quantityStickerText and showQuantitySticker=true from a non-empty sheet value', async () => {
+    const bs = await resolveWithSticker('PACK OF 3')
+    expect(bs.quantityStickerText).toBe('PACK OF 3')
+    expect(bs.showQuantitySticker).toBe(true)
+  })
+
+  it('sets quantityStickerText=null and showQuantitySticker=false for empty sheet value', async () => {
+    const bs = await resolveWithSticker('')
+    expect(bs.quantityStickerText).toBeNull()
+    expect(bs.showQuantitySticker).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ISL-9b: removeEntryBackground iterates sources
+// ---------------------------------------------------------------------------
+
+describe('ISL: removeEntryBackground — per-source processing', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    URL.revokeObjectURL = vi.fn()
+  })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  function setupReadyEntry() {
+    const row = makeSheetRow()
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+  }
+
+  it('sets bgRemovedUrl + done + showBgRemoved:true on catalogue source after removal', async () => {
+    setupReadyEntry()
+    vi.mocked(removeBackgroundService.removeBackground)
+      .mockResolvedValueOnce('blob:product-result')
+      .mockResolvedValueOnce('blob:logo-result')
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
+
+    const entry = result.current.entries[0]!
+    const catSrc = entry.bannerState?.productImageSources.find(s => s.id === 'catalogue')!
+    expect(catSrc.bgRemovedUrl).toBe('blob:product-result')
+    expect(catSrc.bgRemovalStatus).toBe('done')
+    expect(catSrc.showBgRemoved).toBe(true)
+    expect(entry.bgRemovedLogoUrl).toBe('blob:logo-result')
+    expect(entry.bgRemovalStatus).toBe('done')
+  })
+
+  it('marks source error when product bg removal fails; entry status is still done', async () => {
+    setupReadyEntry()
+    vi.mocked(removeBackgroundService.removeBackground)
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockResolvedValueOnce('blob:logo-result')
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
+
+    const entry = result.current.entries[0]!
+    const catSrc = entry.bannerState?.productImageSources.find(s => s.id === 'catalogue')!
+    expect(catSrc.bgRemovalStatus).toBe('error')
+    expect(catSrc.bgRemovedUrl).toBeNull()
+    expect(entry.bgRemovalStatus).toBe('done')
+  })
+
+  it('marks entry done with error note when logo removal fails', async () => {
+    setupReadyEntry()
+    vi.mocked(removeBackgroundService.removeBackground)
+      .mockResolvedValueOnce('blob:product-result')
+      .mockRejectedValueOnce(new Error('Logo fetch failed'))
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
+
+    const entry = result.current.entries[0]!
+    expect(entry.bgRemovalStatus).toBe('done')
+    expect(entry.bgRemovalError).toBe('Product bg: ok | Logo bg: Logo fetch failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ISL-9b: toggleEntrySourceBgRemoved + setEntryActiveSource
+// ---------------------------------------------------------------------------
+
+describe('ISL: toggleEntrySourceBgRemoved and setEntryActiveSource', () => {
+  beforeEach(() => { vi.resetAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  function setupReadyEntry() {
+    const row = makeSheetRow()
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+  }
+
+  it('toggleEntrySourceBgRemoved flips showBgRemoved on the target source only', async () => {
+    setupReadyEntry()
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    const before = result.current.entries[0]!.bannerState!.productImageSources[0]!.showBgRemoved
+
+    act(() => {
+      result.current.toggleEntrySourceBgRemoved(result.current.entries[0]!.id, 'catalogue')
+    })
+
+    expect(result.current.entries[0]!.bannerState!.productImageSources[0]!.showBgRemoved).toBe(!before)
+  })
+
+  it('setEntryActiveSource updates activeProductImageSourceId on the matching entry', async () => {
+    setupReadyEntry()
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+
+    act(() => {
+      result.current.setEntryActiveSource(result.current.entries[0]!.id, 'catalogue')
+    })
+
+    expect(result.current.entries[0]!.bannerState!.activeProductImageSourceId).toBe('catalogue')
   })
 })
 
@@ -265,18 +485,9 @@ describe('useScheduledBanners', () => {
 // ---------------------------------------------------------------------------
 
 describe('updateEntryState', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-  })
+  beforeEach(() => { vi.resetAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  /**
-   * Helper: bring the hook to a state where at least one entry is 'ready'
-   * by wiring all mocks for a successful two-row fetch.
-   */
   async function setupTwoReadyEntries() {
     const rowA = makeSheetRow({ comments: 'Header: Mangoes\nSubheader: Fresh' })
     const rowB = makeSheetRow({ comments: 'Header: Apples\nSubheader: Crisp' })
@@ -297,8 +508,6 @@ describe('updateEntryState', () => {
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
-    // Wait for both entries to finish resolving — must check length first so
-    // that [].every(...) true does not cause early exit with an empty array.
     await waitFor(() => {
       expect(result.current.entries).toHaveLength(2)
       expect(result.current.entries.every(e => e.status === 'ready')).toBe(true)
@@ -307,14 +516,10 @@ describe('updateEntryState', () => {
     const [entryA, entryB] = result.current.entries
     const originalB = entryB!.bannerState
 
-    // Build a new state that differs clearly from the original
     const newState = { ...entryA!.bannerState!, ctaText: 'BUY NOW' }
-
     act(() => { result.current.updateEntryState(entryA!.id, newState) })
 
-    // Target entry gets the new state
     expect(result.current.entries[0]!.bannerState?.ctaText).toBe('BUY NOW')
-    // Sibling entry is untouched
     expect(result.current.entries[1]!.bannerState).toBe(originalB)
   })
 
@@ -330,7 +535,6 @@ describe('updateEntryState', () => {
 
     const originalEntries = result.current.entries.map(e => e.bannerState)
 
-    // Call with a non-existent id — should not throw and should not mutate
     act(() => {
       result.current.updateEntryState(
         'non-existent-id',
@@ -345,99 +549,14 @@ describe('updateEntryState', () => {
 })
 
 // ---------------------------------------------------------------------------
-// removeEntryBackground — brand logo support (BL)
+// Logo toggle
 // ---------------------------------------------------------------------------
 
-/** Shared setup: one ready entry with a product image and brand logo */
-function setupReadyEntry() {
-  const row = makeSheetRow()
-  vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
-  vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-  vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-    'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-  )
-  vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-  vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
-  vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
-}
+describe('toggleEntryBgRemovedLogo', () => {
+  beforeEach(() => { vi.resetAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
 
-describe('removeEntryBackground — logo support (BL)', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    // jsdom does not implement URL.revokeObjectURL — stub it so the hook
-    // doesn't throw when it tries to revoke old blob URLs.
-    URL.revokeObjectURL = vi.fn()
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('BL-2: stores bg-removed URLs in dedicated fields after successful removal', async () => {
-    setupReadyEntry()
-    vi.mocked(removeBackgroundService.removeBackground)
-      .mockResolvedValueOnce('blob:product-result')
-      .mockResolvedValueOnce('blob:logo-result')
-
-    const { result } = renderHook(() => useScheduledBanners())
-    act(() => { result.current.setDate('2026-03-30') })
-    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
-
-    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
-
-    const entry = result.current.entries[0]!
-    // IT-3: stored in dedicated fields, NOT injected into bannerState
-    expect(entry.bgRemovedProductImageUrl).toBe('blob:product-result')
-    expect(entry.bgRemovedLogoUrl).toBe('blob:logo-result')
-    expect(entry.bgRemovalStatus).toBe('done')
-    expect(entry.bgRemovalError).toBeNull()
-  })
-
-  it('BL-2: stores new logo blob URL in bgRemovedLogoUrl when replaced', async () => {
-    setupReadyEntry()
-    vi.mocked(removeBackgroundService.removeBackground)
-      .mockResolvedValueOnce('blob:product-result')
-      .mockResolvedValueOnce('blob:logo-result-new')
-
-    const { result } = renderHook(() => useScheduledBanners())
-    act(() => { result.current.setDate('2026-03-30') })
-    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
-
-    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
-
-    // The dedicated field holds the new blob URL; bannerState is untouched
-    expect(result.current.entries[0]!.bgRemovedLogoUrl).toBe('blob:logo-result-new')
-    expect(result.current.entries[0]!.bannerState?.brandLogoOverride).toBeNull()
-  })
-
-  it('BL-3: marks entry done with error note when logo removal fails but product image succeeds', async () => {
-    setupReadyEntry()
-    vi.mocked(removeBackgroundService.removeBackground)
-      .mockResolvedValueOnce('blob:product-result')
-      .mockRejectedValueOnce(new Error('Logo fetch failed'))
-
-    const { result } = renderHook(() => useScheduledBanners())
-    act(() => { result.current.setDate('2026-03-30') })
-    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
-
-    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
-
-    const entry = result.current.entries[0]!
-    // Product bg-removed URL stored in dedicated field; bannerState untouched
-    expect(entry.bgRemovedProductImageUrl).toBe('blob:product-result')
-    expect(entry.bannerState?.productImageOverride).toBeNull()
-    // Status is 'done' — user is not blocked
-    expect(entry.bgRemovalStatus).toBe('done')
-    // Error note appended
-    expect(entry.bgRemovalError).toBe('Product bg: ok | Logo bg: Logo fetch failed')
-  })
-
-  it('BL edge case: skips logo step silently when product has no brand logo', async () => {
-    const itemWithNoLogo = makeApiItem('item-1')
-    itemWithNoLogo.provider_details = {
-      id: 'prov-1',
-      descriptor: { name: 'Test Brand', symbol: '' },
-    }
+  function setupReadyEntry() {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
@@ -446,28 +565,73 @@ describe('removeEntryBackground — logo support (BL)', () => {
     )
     vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
     vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
-    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([itemWithNoLogo]))
-    vi.mocked(removeBackgroundService.removeBackground).mockResolvedValueOnce('blob:product-result')
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+  }
+
+  it('flips showBgRemovedLogo on the target entry only', async () => {
+    setupReadyEntry()
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
     await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
 
-    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
-
-    const entry = result.current.entries[0]!
-    expect(entry.bgRemovalStatus).toBe('done')
-    expect(entry.bgRemovalError).toBeNull()
-    // removeBackground called exactly once (only product image, not logo)
-    expect(vi.mocked(removeBackgroundService.removeBackground)).toHaveBeenCalledTimes(1)
+    const original = result.current.entries[0]!.showBgRemovedLogo
+    act(() => { result.current.toggleEntryBgRemovedLogo(result.current.entries[0]!.id) })
+    expect(result.current.entries[0]!.showBgRemovedLogo).toBe(!original)
   })
 })
 
 // ---------------------------------------------------------------------------
-// IT-18 / IT-19 / IT-20 — bg-removed URL separation, toggle, and date revocation
+// Date cleanup — blob URL revocation
 // ---------------------------------------------------------------------------
 
-describe('IT-3/IT-4/IT-5 — bg-removed URL fields, toggle, and date cleanup', () => {
+describe('setDate — blob URL revocation', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    URL.revokeObjectURL = vi.fn()
+  })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('revokes source bgRemovedUrl and bgRemovedLogoUrl when date changes', async () => {
+    const row = makeSheetRow()
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
+    vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+    vi.mocked(removeBackgroundService.removeBackground)
+      .mockResolvedValueOnce('blob:product-result')
+      .mockResolvedValueOnce('blob:logo-result')
+
+    const { result } = renderHook(() => useScheduledBanners())
+    act(() => { result.current.setDate('2026-03-30') })
+    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
+
+    // Confirm blob URLs are set before date change
+    const catSrc = result.current.entries[0]!.bannerState!.productImageSources[0]!
+    expect(catSrc.bgRemovedUrl).toBe('blob:product-result')
+    expect(result.current.entries[0]!.bgRemovedLogoUrl).toBe('blob:logo-result')
+
+    // Change date — cleanup should run
+    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([])
+    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([])
+    act(() => { result.current.setDate('2026-03-31') })
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:product-result')
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:logo-result')
+    expect(result.current.entries).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ABR-7 — auto background removal triggered by setDate
+// ---------------------------------------------------------------------------
+
+describe('ABR-7 — auto background removal on setDate', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     URL.revokeObjectURL = vi.fn()
@@ -477,106 +641,70 @@ describe('IT-3/IT-4/IT-5 — bg-removed URL fields, toggle, and date cleanup', (
     vi.restoreAllMocks()
   })
 
-  // IT-18: removeEntryBackground stores results in dedicated fields; bannerState overrides stay null
-  it('IT-18: bgRemovedProductImageUrl and bgRemovedLogoUrl are set; bannerState overrides remain null', async () => {
-    setupReadyEntry()
-    vi.mocked(removeBackgroundService.removeBackground)
-      .mockResolvedValueOnce('blob:product-result')
-      .mockResolvedValueOnce('blob:logo-result')
-
-    const { result } = renderHook(() => useScheduledBanners())
-    act(() => { result.current.setDate('2026-03-30') })
-    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
-
-    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
-
-    const entry = result.current.entries[0]!
-    // IT-3: stored in dedicated fields, NOT injected into bannerState
-    expect(entry.bgRemovedProductImageUrl).toBe('blob:product-result')
-    expect(entry.bgRemovedLogoUrl).toBe('blob:logo-result')
-    // bannerState source-of-truth untouched
-    expect(entry.bannerState?.productImageOverride).toBeNull()
-    expect(entry.bannerState?.brandLogoOverride).toBeNull()
-  })
-
-  // IT-19a: toggleEntryBgRemovedProduct flips showBgRemovedProduct on target; siblings unaffected
-  it('IT-19a: toggleEntryBgRemovedProduct flips showBgRemovedProduct on target entry only', async () => {
-    const rowA = makeSheetRow({ comments: 'Header: Mangoes\nSubheader: Fresh' })
-    const rowB = makeSheetRow({ comments: 'Header: Apples\nSubheader: Crisp' })
-
+  function setupTwoReadyRows() {
+    const rowA = makeSheetRow()
+    const rowB = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([rowA, rowB])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([rowA, rowB])
-    vi.mocked(sheetsService.extractProductUrl)
-      .mockReturnValue('https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1')
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments)
-      .mockReturnValueOnce({ heading: 'Mangoes', subheading: 'Fresh' })
-      .mockReturnValueOnce({ heading: 'Apples', subheading: 'Crisp' })
+    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
+      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    )
+    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
+    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
+  }
+
+  it('ABR-7a: processes all ready entries; sources get bgRemovedUrl; logo stored in entry', async () => {
+    setupTwoReadyRows()
+    vi.mocked(removeBackgroundService.removeBackground)
+      .mockResolvedValueOnce('blob:entry1-product')
+      .mockResolvedValueOnce('blob:entry1-logo')
+      .mockResolvedValueOnce('blob:entry2-product')
+      .mockResolvedValueOnce('blob:entry2-logo')
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
+
     await waitFor(() => {
       expect(result.current.entries).toHaveLength(2)
-      expect(result.current.entries.every(e => e.status === 'ready')).toBe(true)
+      expect(result.current.entries.every(e => e.bgRemovalStatus === 'done')).toBe(true)
     })
 
-    const [entryA, entryB] = result.current.entries
-    const originalBValue = entryB!.showBgRemovedProduct
-
-    // All entries start with showBgRemovedProduct: true (per hook init)
-    expect(entryA!.showBgRemovedProduct).toBe(true)
-
-    act(() => { result.current.toggleEntryBgRemovedProduct(entryA!.id) })
-
-    expect(result.current.entries[0]!.showBgRemovedProduct).toBe(false)
-    // Sibling entry is untouched
-    expect(result.current.entries[1]!.showBgRemovedProduct).toBe(originalBValue)
+    expect(vi.mocked(removeBackgroundService.removeBackground)).toHaveBeenCalledTimes(4)
+    const src1 = result.current.entries[0]!.bannerState!.productImageSources[0]!
+    const src2 = result.current.entries[1]!.bannerState!.productImageSources[0]!
+    expect(src1.bgRemovedUrl).toBe('blob:entry1-product')
+    expect(src2.bgRemovedUrl).toBe('blob:entry2-product')
+    expect(result.current.entries[0]!.bgRemovedLogoUrl).toBe('blob:entry1-logo')
+    expect(result.current.entries[1]!.bgRemovedLogoUrl).toBe('blob:entry2-logo')
   })
 
-  // IT-19b: calling toggleEntryBgRemovedProduct twice returns to original value
-  it('IT-19b: toggleEntryBgRemovedProduct twice returns to original showBgRemovedProduct', async () => {
-    setupReadyEntry()
+  it('ABR-7b: date change mid-loop prevents subsequent entries from being processed', async () => {
+    setupTwoReadyRows()
 
-    const { result } = renderHook(() => useScheduledBanners())
-    act(() => { result.current.setDate('2026-03-30') })
-    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
+    let signalInFlight!: () => void
+    const inFlightPromise = new Promise<void>(res => { signalInFlight = res })
 
-    const original = result.current.entries[0]!.showBgRemovedProduct
+    let resolveFirst!: (url: string) => void
+    const firstCallPromise = new Promise<string>(res => { resolveFirst = res })
 
-    act(() => { result.current.toggleEntryBgRemovedProduct(result.current.entries[0]!.id) })
-    act(() => { result.current.toggleEntryBgRemovedProduct(result.current.entries[0]!.id) })
-
-    expect(result.current.entries[0]!.showBgRemovedProduct).toBe(original)
-  })
-
-  // IT-20: changing date revokes blob URLs from bgRemovedProductImageUrl and bgRemovedLogoUrl
-  it('IT-20: setDate revokes bgRemovedProductImageUrl and bgRemovedLogoUrl blob URLs from previous entries', async () => {
-    setupReadyEntry()
     vi.mocked(removeBackgroundService.removeBackground)
-      .mockResolvedValueOnce('blob:product-result')
-      .mockResolvedValueOnce('blob:logo-result')
+      .mockImplementationOnce(async () => {
+        signalInFlight()
+        return firstCallPromise
+      })
+      .mockResolvedValue('blob:other')
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
-    await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
 
-    await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
+    await inFlightPromise
 
-    // Verify blob URLs are stored before date change
-    expect(result.current.entries[0]!.bgRemovedProductImageUrl).toBe('blob:product-result')
-    expect(result.current.entries[0]!.bgRemovedLogoUrl).toBe('blob:logo-result')
-
-    // Reset mocks for the new date fetch (returns empty — just triggers the cleanup path)
-    vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([])
-    vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([])
-
+    vi.mocked(sheetsService.fetchSheetRows).mockReturnValue(new Promise(() => {}))
     act(() => { result.current.setDate('2026-03-31') })
 
-    // Both blob URLs should have been revoked
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:product-result')
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:logo-result')
-    // Entries are cleared
-    expect(result.current.entries).toHaveLength(0)
+    await act(async () => { resolveFirst('blob:entry1-product') })
+
+    expect(vi.mocked(removeBackgroundService.removeBackground)).toHaveBeenCalledTimes(1)
   })
 })

@@ -21,6 +21,8 @@ const COL_TEAM = 'Team'
 const COL_PAGE = 'Page\nHomepage/Food/Grocery etc'
 const COL_OFFER_CALLOUT = 'Offer callout'
 const COL_COMMENTS = 'Comments'
+/** Optional — column may not exist in older sheet versions. */
+const COL_QUANTITY_STICKER = 'quantity sticker'
 
 // ---------------------------------------------------------------------------
 // Types for the raw gviz/tq JSON payload
@@ -125,6 +127,9 @@ export async function fetchSheetRows(signal?: AbortSignal): Promise<SheetRow[]> 
       page: cell(COL_PAGE),
       offerCallout: cell(COL_OFFER_CALLOUT),
       comments: cell(COL_COMMENTS),
+      quantitySticker: colIndex[COL_QUANTITY_STICKER] !== undefined
+        ? cell(COL_QUANTITY_STICKER)
+        : '',
     }
   })
 }
@@ -149,11 +154,13 @@ export function filterRowsForDate(rows: SheetRow[], targetDate: string): SheetRo
   // The sheet stores "3/30/2026" not "03/30/2026".
   const normalised = normaliseDateString(targetDate)
 
+  const allowedPages = ['banner', 'supermall']
+
   return rows.filter(
     row =>
       normaliseDateString(row.date) === normalised &&
       row.team.trim().toLowerCase() === 'bazar page' &&
-      row.page.trim().toLowerCase() === 'banner',
+      allowedPages.includes(row.page.trim().toLowerCase()),
   )
 }
 

@@ -1,6 +1,6 @@
 # Feature Implementation Plan
 
-**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE | SB-1–SB-17 DONE | RB-1–RB-5 DONE | BW-1–BW-5 DONE ✅ | QD-1–QD-4 DONE ✅ | BL-1–BL-5 DONE ✅ | ES-1–ES-8 DONE ✅ | IT-1–IT-25 DONE ✅ | IT-26–IT-30 Manual TODO`
+**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE | SB-1–SB-17 DONE | RB-1–RB-5 DONE | BW-1–BW-5 DONE ✅ | QD-1–QD-4 DONE ✅ | BL-1–BL-5 DONE ✅ | ES-1–ES-8 DONE ✅ | IT-1–IT-25 DONE ✅ | IT-26–IT-30 Manual TODO | ABR-1–ABR-8 DONE ✅ | ISL-1–ISL-10 DONE ✅ | QST-1–QST-14 DONE ✅`
 
 ## TLDR
 Build a client-side React app that lets Digihaat employees search products from a JSON catalogue, customize banner elements (background, CTA, offer badge), preview a 712×322px banner in real-time, and export it as PNG/JPG/WEBP. Dark theme modern dashboard UI. No backend — catalogue is a static JSON file.
@@ -2198,3 +2198,769 @@ None — all changes are additions to existing files.
 - `src/services/removeBackgroundService.ts` — called as-is; output routing changes only in the hook and `App.tsx`
 - `src/components/ExportPanel/ExportPanel.tsx` — unchanged; export uses the effective display state passed to `BannerPreview`
 - `src/constants/` — unchanged
+
+
+---
+
+## Auto Background Removal + Quantity Sticker Re-add
+
+**Prefix:** `ABR` (Auto Background Removal) · `QST` (Quantity Sticker)
+**Status:** `ABR-1–ABR-8 DONE ✅ | ISL-1–ISL-10 DONE ✅ | QST-1–QST-14 DONE ✅`
+
+### Context
+
+Two parallel improvements:
+
+1. **ABR** — Background removal currently requires a manual button press. The goal is to auto-trigger removal the moment a product is selected (builder mode) or a scheduled banner resolves (scheduler mode). The existing `Original / BG Removed` toggle pill and retry path are kept. A spinner overlay appears on the product image area during processing.
+
+2. **QST** — The quantity sticker (pill badge overlaid bottom-right on the product image) was previously implemented and then removed in commit `cd3374f`. It is being re-added with a revised data source: the scheduler reads a new optional **"quantity sticker"** column from the Google Sheet; the main builder auto-detects from the catalogue's `quantity.unitized` field (PACK unit → "PACK OF N"). Text is always user-editable. Sticker width is dynamic (`fit-content`).
+
+---
+
+### Feature 1 — Auto Background Removal (ABR)
+
+#### Phase 1 — BannerPreview: spinner overlay
+
+- [x] ABR-1: `src/components/BannerPreview/BannerPreview.tsx` — Add `isRemovingBg?: boolean` to `BannerPreviewProps`. When `true`, render an absolutely-positioned semi-transparent overlay div covering the right half of the banner (`left: IMAGE_LEFT_BARRIER, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)'`) containing a centred CSS spinning ring (white, 28px, implemented via `border` + `borderTopColor: transparent` + `borderRadius: 50%` + `animation: spin 0.8s linear infinite` in an inline `<style>` tag injected once). This gives the user immediate visual feedback without blocking the left-side text content.
+
+---
+
+#### Phase 2 — App.tsx: auto-trigger on product selection (builder mode)
+
+- [x] ABR-2: `src/App.tsx` — Add a `useEffect` that watches `selectedProduct?.id`. When it changes and `selectedProduct` is non-null, call `handleRemoveBackground()` automatically. Declare this effect **after** the existing reset effects (lines 181–212) so `bgRemovedProductUrl` / `showBgRemovedProduct` are already cleared before the new removal starts.
+
+- [x] ABR-3: `src/App.tsx` — Pass `isRemovingBg` as a new prop to `<BannerPreview ref={bannerRef} state={bannerState} isRemovingBg={isRemovingBg} />` so the spinner overlay is active while auto-removal processes.
+
+- [x] ABR-4: `src/App.tsx` — Change the manual "Remove Background" button to a **retry-only** button: wrap it in `{!isRemovingBg && !allAlreadyProcessed && (…)}` so it only appears when auto-removal has not succeeded (e.g. network failure). Label stays `"Remove Background"`. This removes the button from normal flow while preserving the failure-recovery path.
+
+---
+
+#### Phase 3 — useScheduledBanners: sequential auto-removal queue
+
+- [x] ABR-5: `src/hooks/useScheduledBanners.ts` — In `setDate`, inside the async IIFE, after `await Promise.allSettled(initialEntries.map(entry => resolveEntry(…)))`, add a sequential auto-removal loop:
+
+  ```ts
+  // Auto BG removal: process ready entries one at a time
+  if (!signal.aborted) {
+    removeBgAbortRef.current = false
+    for (const entry of entriesRef.current) {
+      if (signal.aborted || removeBgAbortRef.current) break
+      if (entry.status === 'ready') {
+        await removeEntryBackground(entry.id)
+      }
+    }
+  }
+  ```
+
+  Sequential (not parallel) to avoid spawning N concurrent ONNX Web Workers which would spike memory and slow each other down. The `signal.aborted` check prevents starting new entries if the user changes dates mid-loop; the existing `removeBgAbortRef` guard inside `removeEntryBackground` stops the currently-running removal mid-image.
+
+---
+
+#### Phase 4 — ScheduledBannerCard: demote button to retry-only
+
+- [x] ABR-6: `src/components/DateSchedule/ScheduledBannerCard.tsx` — Change the "Remove Background" / "Retry Bg" button visibility condition to `bgRemovalStatus === 'error'` only (currently shown for `idle | error`). When `bgRemovalStatus === 'idle'` or `'removing'`, no button is shown — the `BgRemovalBadge` already communicates processing state. The button text stays `"Retry Bg"`. This removes the manual-trigger button from normal flow while preserving the failure-recovery path.
+
+---
+
+#### Phase 5 — Tests
+
+- [x] ABR-7: `src/hooks/__tests__/useScheduledBanners.test.ts` — After `setDate` resolves all entries, assert that `removeEntryBackground` was called for each `status === 'ready'` entry in sequence (mock `removeBackground` to track call order). Assert that if date changes mid-loop, subsequent entries do not have `removeEntryBackground` called.
+
+- [x] ABR-8: `npm run build && npm run test:run` — TypeScript compiles clean; all tests pass.
+
+---
+
+#### Edge Cases (ABR)
+
+| Scenario | Behavior |
+|---|---|
+| Builder: user switches product while auto-removal is in flight | Existing reset `useEffect` on `selectedProduct?.id` clears `bgRemovedProductUrl` + `showBgRemovedProduct`; the in-flight `handleRemoveBackground` completes but `setIsRemovingBg(false)` fires after the new auto-trigger has already started — harmless since `removeBgDisabled` gate prevents double-invocation |
+| Builder: auto-removal fails (network / WASM error) | `isRemovingBg` goes false; `bgRemovedProductUrl` stays null; manual retry button appears |
+| Scheduler: one entry fails to resolve | `status === 'error'` entries are skipped in the auto-removal loop |
+| Scheduler: user changes date while loop is running | `signal.aborted` breaks outer loop; `removeBgAbortRef.current = true` (set by `setDate`) stops the in-flight `removeEntryBackground` after the current image completes |
+| Scheduler: all entries resolve as errors | Loop iterates but finds no `status === 'ready'` entries; no-op |
+
+---
+
+#### Files Modified (ABR)
+
+| File | Change |
+|---|---|
+| `src/components/BannerPreview/BannerPreview.tsx` | Add `isRemovingBg` prop; render spinner overlay on right half when true |
+| `src/App.tsx` | Add auto-trigger `useEffect`; pass `isRemovingBg` to `BannerPreview`; demote manual button to retry-only |
+| `src/hooks/useScheduledBanners.ts` | Add sequential auto-removal loop after `Promise.allSettled` in `setDate` |
+| `src/components/DateSchedule/ScheduledBannerCard.tsx` | Restrict "Retry Bg" button to `bgRemovalStatus === 'error'` only |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Tests for sequential auto-removal and abort-on-date-change |
+
+#### Files NOT Modified (ABR)
+
+- `src/services/removeBackgroundService.ts` — called as-is
+- `src/types/index.ts` — no new types needed
+- `src/components/BgVersionPill/BgVersionPill.tsx` — unchanged
+- `src/constants/bannerTemplate.ts` — unchanged
+
+---
+
+### Feature 2 — Image Source List (ISL)
+
+**Prefix:** `ISL` (Image Source List)
+**Status:** `ISL-1–ISL-10 TODO`
+
+#### Context
+
+Currently each banner has a single product image slot: the catalogue image or a single user-uploaded override (`productImageOverride`). Background-removal state (`bgRemovedProductUrl`, `showBgRemovedProduct`) is flat App-level state, not per-image.
+
+This feature replaces that single slot with an **image source list**: a compact selector showing all available product images — the catalogue image plus any user-uploaded/pasted images. Each source independently tracks its own background-removal state and its own `showBgRemoved` toggle. Background removal is **automatic** — triggered immediately when a source is added, with no manual button. The user switches between sources by clicking thumbnails and toggles the bg version per source via the existing `BgVersionPill`.
+
+Two invariants:
+1. When a new catalogue product is selected, all user sources are cleared and the list resets to the catalogue image only.
+2. This behaviour applies identically in **builder mode** and **scheduler mode** (when editing a scheduled banner via the right-panel controls).
+
+---
+
+#### Phase 1 — Type definitions
+
+- [x] ✅ ISL-1: `src/types/index.ts`
+
+  **Add `ImageSource` interface:**
+  ```ts
+  export interface ImageSource {
+    /** 'catalogue' for the product's catalogue image; UUID for user uploads */
+    id: string;
+    /** Display label — "Catalogue" | "Upload 1" | "Paste 1" etc. */
+    label: string;
+    /** Original image URL — catalogue URL or blob: URL for user uploads */
+    originalUrl: string;
+    /** Blob URL of the bg-removed version; null until processing completes */
+    bgRemovedUrl: string | null;
+    /** Lifecycle of the background-removal worker for this image */
+    bgRemovalStatus: 'idle' | 'removing' | 'done' | 'error';
+    /**
+     * Whether to display the bg-removed version.
+     * Auto-flipped to true after successful removal so the result is
+     * immediately visible without a manual click.
+     */
+    showBgRemoved: boolean;
+    /** 'catalogue' sources cannot be removed from the list by the user */
+    source: 'catalogue' | 'user';
+  }
+  ```
+
+  **Update `BannerState`** — replace `productImageOverride: string | null` with:
+  ```ts
+  /** All available product images. Always contains the catalogue source when a product is selected. */
+  productImageSources: ImageSource[];
+  /** ID of the currently active image source. null when the list is empty. */
+  activeProductImageSourceId: string | null;
+  ```
+
+  **Update `ScheduledBannerEntry`** — remove `bgRemovedProductImageUrl: string | null` and `showBgRemovedProduct: boolean` (these fields migrate into each `ImageSource` inside `bannerState.productImageSources`). Retain `bgRemovedLogoUrl` and `showBgRemovedLogo` unchanged (logo handling is unaffected by this feature). Update the JSDoc on `bannerState` to reflect that product image bg-removal state now lives inside sources.
+
+---
+
+#### Phase 2 — useBannerState: source list state management
+
+- [x] ✅ ISL-2: `src/hooks/useBannerState.tsx`
+
+  Replace `const [productImageOverride, setProductImageOverride] = useState<string | null>(null)` with:
+  ```ts
+  const [productImageSources, setProductImageSources] = useState<ImageSource[]>([])
+  const [activeProductImageSourceId, setActiveProductImageSourceId] = useState<string | null>(null)
+  ```
+
+  **Update `selectProduct`** — after resetting overrides, initialise the catalogue source if the product has an imageUrl:
+  ```ts
+  if (product?.imageUrl) {
+    const catalogueSource: ImageSource = {
+      id: 'catalogue',
+      label: 'Catalogue',
+      originalUrl: product.imageUrl,
+      bgRemovedUrl: null,
+      bgRemovalStatus: 'idle',
+      showBgRemoved: false,
+      source: 'catalogue',
+    }
+    setProductImageSources([catalogueSource])
+    setActiveProductImageSourceId('catalogue')
+  } else {
+    setProductImageSources([])
+    setActiveProductImageSourceId(null)
+  }
+  ```
+  When `product` is `null` (deselect), both lists are cleared.
+
+  **Update `loadState`** — restore `productImageSources` and `activeProductImageSourceId` from the incoming `BannerState`.
+
+  **Add new context functions** (add to `BannerContextType` and `value`):
+  - `addProductImageSource(url: string, label?: string): string` — appends a new 'user' `ImageSource` with `bgRemovalStatus: 'idle'`; auto-names it "Upload N" (N = user-source count + 1); sets it as active; returns the new source `id`.
+  - `removeProductImageSource(id: string): void` — removes a 'user' source; if it was active, switches active to the preceding source (or 'catalogue' if none remain).
+  - `setActiveProductImageSource(id: string): void` — switches the active source.
+  - `updateProductImageSourceBg(id: string, update: Pick<ImageSource, 'bgRemovedUrl' | 'bgRemovalStatus' | 'showBgRemoved'>): void` — patches bg state on a specific source; used by App.tsx after the worker resolves.
+  - `toggleSourceBgRemoved(id: string): void` — flips `showBgRemoved` on a specific source.
+
+  **Remove** `setProductImageOverride` from `BannerContextType` and the `value` object.
+
+---
+
+#### Phase 3 — BannerPreview: derive image from sources
+
+- [x] ✅ ISL-3: `src/components/BannerPreview/BannerPreview.tsx`
+
+  Replace the two-line derivation:
+  ```ts
+  const effectiveImageUrl = productImageOverride ?? selectedProduct?.imageUrl
+  const hasValidImage = productImageOverride ? true : selectedProduct?.hasValidImage ?? false
+  ```
+  with:
+  ```ts
+  const activeSource = productImageSources.find(s => s.id === activeProductImageSourceId)
+  const effectiveImageUrl: string | undefined =
+    activeSource
+      ? (activeSource.showBgRemoved && activeSource.bgRemovedUrl)
+          ? activeSource.bgRemovedUrl
+          : activeSource.source === 'user'
+              ? activeSource.originalUrl
+              : selectedProduct?.imageUrl
+      : selectedProduct?.imageUrl
+  const hasValidImage = activeSource?.source === 'user'
+    ? true
+    : selectedProduct?.hasValidImage ?? false
+  ```
+
+  Destructure `productImageSources` and `activeProductImageSourceId` from `state` alongside the other fields. Remove `productImageOverride` from the destructure.
+
+---
+
+#### Phase 4 — ImageSourceList component
+
+- [x] ✅ ISL-4: **New file** `src/components/ImageSourceList/ImageSourceList.tsx`
+
+  Props:
+  ```ts
+  interface ImageSourceListProps {
+    sources: ImageSource[]
+    activeSourceId: string | null
+    onSelect: (id: string) => void
+    onRemove: (id: string) => void       // called only for 'user' sources
+    onToggleBgRemoved: (id: string) => void
+  }
+  ```
+
+  **Thumbnail strip** — horizontal row of `40×40` rounded-square chips. Each chip contains:
+  - `<img>` showing `source.originalUrl` (object-fit: cover), greyscale filter when `bgRemovalStatus === 'removing'`
+  - Active chip: `2px` accent-coloured outline (`var(--accent-base)`)
+  - Status indicator overlay (bottom-right corner of chip, `12×12`):
+    - `'removing'` → white CSS spinner ring (`8px`, `border: 1.5px solid white`, `borderTopColor: transparent`, `borderRadius: 50%`, animated)
+    - `'done'` → small white checkmark circle (`background: var(--accent-base)`, `✓` text or SVG)
+    - `'error'` → small red `!` circle
+  - Remove button (×, `14×14`, top-right, only on `source === 'user'` sources) — `onClick` calls `onRemove(source.id)`, `stopPropagation`
+
+  **BgVersionPill** — shown below the thumbnail strip when the **active** source has `bgRemovalStatus === 'done'`:
+  ```tsx
+  {activeSource?.bgRemovalStatus === 'done' && (
+    <BgVersionPill
+      showBgRemoved={activeSource.showBgRemoved}
+      onToggle={() => onToggleBgRemoved(activeSource.id)}
+    />
+  )}
+  ```
+
+  Clicking a chip calls `onSelect(source.id)`.
+
+---
+
+#### Phase 5 — BannerControls: integrate source list
+
+- [x] ✅ ISL-5: `src/components/BannerControls/BannerControls.tsx`
+
+  **Remove props:**
+  - `productImageOverride: string | null`
+  - `onProductImageChange: (url: string | null) => void`
+  - `hasBgRemovedProduct: boolean`
+  - `showBgRemovedProduct: boolean`
+  - `onToggleBgRemovedProduct: () => void`
+
+  **Add props:**
+  ```ts
+  productImageSources: ImageSource[]
+  activeProductImageSourceId: string | null
+  onAddProductImage: (url: string) => void   // called with blob URL from upload/paste
+  onRemoveProductImageSource: (id: string) => void
+  onSelectProductImageSource: (id: string) => void
+  onToggleSourceBgRemoved: (id: string) => void
+  ```
+
+  **Update Product Image `<Section>`:**
+  ```tsx
+  <Section title="Product Image">
+    <div className="space-y-2">
+      {productImageSources.length > 0 && (
+        <ImageSourceList
+          sources={productImageSources}
+          activeSourceId={activeProductImageSourceId}
+          onSelect={onSelectProductImageSource}
+          onRemove={onRemoveProductImageSource}
+          onToggleBgRemoved={onToggleSourceBgRemoved}
+        />
+      )}
+      <ImageUploadZone
+        currentImage={null}            // always blank — we no longer show a single thumbnail here
+        onImageChange={url => { if (url) onAddProductImage(url) }}
+        label="Add Image"
+      />
+      <ZoomSlider
+        scale={productImageScale}
+        onChange={onProductImageScaleChange}
+        onReset={() => onProductImageScaleChange(1)}
+      />
+    </div>
+  </Section>
+  ```
+
+  Import `ImageSourceList` from `@/components/ImageSourceList/ImageSourceList`.
+
+---
+
+#### Phase 6 — App.tsx: auto bg removal per source
+
+- [x] ✅ ISL-6: `src/App.tsx`
+
+  **Remove state:**
+  - `const [bgRemovedProductUrl, setBgRemovedProductUrl] = useState<string | null>(null)`
+  - `const [showBgRemovedProduct, setShowBgRemovedProduct] = useState(false)`
+  - The `useEffect` that resets `bgRemovedProductUrl` / `showBgRemovedProduct` on `selectedProduct?.id` change
+  - The `useEffect` that resets `bgRemovedProductUrl` / `showBgRemovedProduct` on `productImageOverride` change
+  - The manual `useEffect` auto-trigger on `selectedProduct?.id` (the trigger now happens inside `selectProduct` via source initialisation + the effect below)
+
+  **Destructure from `useBannerState()`:** add `productImageSources`, `activeProductImageSourceId`, `addProductImageSource`, `removeProductImageSource`, `setActiveProductImageSource`, `updateProductImageSourceBg`, `toggleSourceBgRemoved`.
+
+  **Replace `handleRemoveBackground`** with a focused per-source runner:
+  ```ts
+  const runBgRemovalForSource = useCallback(async (sourceId: string, sourceUrl: string) => {
+    updateProductImageSourceBg(sourceId, { bgRemovedUrl: null, bgRemovalStatus: 'removing', showBgRemoved: false })
+    try {
+      const resultUrl = await removeBackground(sourceUrl)
+      updateProductImageSourceBg(sourceId, {
+        bgRemovedUrl: resultUrl,
+        bgRemovalStatus: 'done',
+        showBgRemoved: true,
+      })
+    } catch (err) {
+      updateProductImageSourceBg(sourceId, { bgRemovedUrl: null, bgRemovalStatus: 'error', showBgRemoved: false })
+      const msg = err instanceof Error ? err.message : String(err)
+      addLog('error', `Failed to remove background: ${msg}`)
+    }
+  }, [updateProductImageSourceBg, addLog])
+  ```
+
+  **Add effect** to auto-run bg removal for any newly-added idle source:
+  ```ts
+  useEffect(() => {
+    for (const source of productImageSources) {
+      if (source.bgRemovalStatus === 'idle') {
+        void runBgRemovalForSource(source.id, source.originalUrl)
+      }
+    }
+  }, [productImageSources, runBgRemovalForSource])
+  ```
+  Because `runBgRemovalForSource` immediately transitions the source to `'removing'`, subsequent effect runs see no `'idle'` sources and are no-ops.
+
+  **Add `handleAddProductImage`** (called from BannerControls when the user uploads/pastes):
+  ```ts
+  const handleAddProductImage = useCallback((url: string) => {
+    addProductImageSource(url)
+    // The useEffect above will pick up the new 'idle' source and trigger removal
+  }, [addProductImageSource])
+  ```
+
+  **Derive `isRemovingBg`** from sources instead of state:
+  ```ts
+  const isRemovingBg = productImageSources.some(s => s.bgRemovalStatus === 'removing')
+  ```
+
+  **Remove manual "Remove Background" button** from the JSX entirely (no retry path needed for product images — errors are shown via the status indicator in `ImageSourceList`).
+
+  **Update `bannerState` useMemo** — replace `productImageOverride` / `effectiveProductImageOverride` fields with `productImageSources` and `activeProductImageSourceId`. Remove `bgRemovedProductUrl`, `showBgRemovedProduct` from the memo body and dependency array.
+
+  **Update `<BannerControls>` props** — remove `productImageOverride`, `onProductImageChange`, `hasBgRemovedProduct`, `showBgRemovedProduct`, `onToggleBgRemovedProduct`; add `productImageSources`, `activeProductImageSourceId`, `onAddProductImage={handleAddProductImage}`, `onRemoveProductImageSource={removeProductImageSource}`, `onSelectProductImageSource={setActiveProductImageSource}`, `onToggleSourceBgRemoved={toggleSourceBgRemoved}`.
+
+  Retain all logo-related props and state (`bgRemovedLogoUrl`, `showBgRemovedLogo`, `hasBgRemovedLogo`, logo toggle) unchanged.
+
+---
+
+#### Phase 7 — useScheduledBanners: per-entry source management
+
+- [x] ✅ ISL-7: `src/hooks/useScheduledBanners.ts`
+
+  **Update `defaultBannerState()`** — remove `productImageOverride: null`; add:
+  ```ts
+  productImageSources: [],
+  activeProductImageSourceId: null,
+  ```
+
+  **Update `resolveEntry()`** — in the `bannerState` assembly block, after resolving `product`, initialise the catalogue source:
+  ```ts
+  const productImageSources: ImageSource[] = product.imageUrl
+    ? [{
+        id: 'catalogue',
+        label: 'Catalogue',
+        originalUrl: product.imageUrl,
+        bgRemovedUrl: null,
+        bgRemovalStatus: 'idle',
+        showBgRemoved: false,
+        source: 'catalogue',
+      }]
+    : []
+
+  const bannerState: BannerState = {
+    ...defaultBannerState(),
+    selectedProduct: product,
+    productImageSources,
+    activeProductImageSourceId: productImageSources[0]?.id ?? null,
+    productNameOverride: heading || null,
+    // … other overrides unchanged …
+  }
+  ```
+
+  **Update `removeEntryBackground()`** — replace the single-image product removal block with a loop over idle sources in `entry.bannerState.productImageSources`:
+  ```ts
+  const idleSources = entry.bannerState.productImageSources.filter(s => s.bgRemovalStatus === 'idle')
+
+  // Mark all idle sources as 'removing'
+  syncedSetEntries(prev => prev.map(e => {
+    if (e.id !== id || !e.bannerState) return e
+    return {
+      ...e,
+      bannerState: {
+        ...e.bannerState,
+        productImageSources: e.bannerState.productImageSources.map(s =>
+          idleSources.some(is => is.id === s.id) ? { ...s, bgRemovalStatus: 'removing' as const } : s
+        ),
+      },
+    }
+  }))
+
+  for (const source of idleSources) {
+    if (removeBgAbortRef.current) break
+    try {
+      const resultUrl = await removeBackground(source.originalUrl)
+      if (removeBgAbortRef.current) { URL.revokeObjectURL(resultUrl); break }
+      syncedSetEntries(prev => prev.map(e => {
+        if (e.id !== id || !e.bannerState) return e
+        return {
+          ...e,
+          bannerState: {
+            ...e.bannerState,
+            productImageSources: e.bannerState.productImageSources.map(s =>
+              s.id === source.id
+                ? { ...s, bgRemovedUrl: resultUrl, bgRemovalStatus: 'done' as const, showBgRemoved: true }
+                : s
+            ),
+          },
+        }
+      }))
+    } catch (err) {
+      syncedSetEntries(prev => prev.map(e => {
+        if (e.id !== id || !e.bannerState) return e
+        return {
+          ...e,
+          bannerState: {
+            ...e.bannerState,
+            productImageSources: e.bannerState.productImageSources.map(s =>
+              s.id === source.id ? { ...s, bgRemovalStatus: 'error' as const } : s
+            ),
+          },
+        }
+      }))
+    }
+  }
+  ```
+
+  **Update `setDate()` revoke loop** — iterate over sources to revoke blob URLs on date change:
+  ```ts
+  for (const entry of entriesRef.current) {
+    if (entry.bannerState) {
+      for (const source of entry.bannerState.productImageSources) {
+        if (source.bgRemovedUrl?.startsWith('blob:')) URL.revokeObjectURL(source.bgRemovedUrl)
+        if (source.source === 'user' && source.originalUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(source.originalUrl)
+        }
+      }
+    }
+    if (entry.bgRemovedLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(entry.bgRemovedLogoUrl)
+  }
+  ```
+
+  **Remove `toggleEntryBgRemovedProduct`** from the hook (replaced below).
+
+  **Add new functions** (update `UseScheduledBannersReturn`):
+  - `toggleEntrySourceBgRemoved(entryId: string, sourceId: string): void` — flips `showBgRemoved` on the matching source within `entry.bannerState.productImageSources`.
+  - `setEntryActiveSource(entryId: string, sourceId: string): void` — updates `entry.bannerState.activeProductImageSourceId`.
+
+  **Update `initialEntries` construction** — remove `bgRemovedProductImageUrl: null` and `showBgRemovedProduct: true` from the initial entry shape.
+
+---
+
+#### Phase 8 — ScheduledBannerCard: update display
+
+- [x] ✅ ISL-8: `src/components/DateSchedule/ScheduledBannerCard.tsx`
+
+  **Remove** the bg-injection block that set `productImageOverride: entry.bgRemovedProductImageUrl`. Product image selection is now handled entirely inside `BannerPreview` by reading `state.productImageSources`. The display state no longer needs manual override injection for product images.
+
+  **Retain** the logo injection (unchanged):
+  ```ts
+  const effectiveDisplayState =
+    entry.showBgRemovedLogo && entry.bgRemovedLogoUrl
+      ? { ...displayState, brandLogoOverride: entry.bgRemovedLogoUrl }
+      : displayState
+  ```
+
+  **Update props** — the card receives `onToggleSourceBgRemoved` and `onSetActiveSource` instead of `onToggleBgRemovedProduct`. Pass these through to `BannerControls` when `isEditing` is true (so the user can switch sources and toggle bg version while editing a scheduled entry).
+
+  **No changes needed** for non-editing card rendering — `BannerPreview` reads the sources from `entry.bannerState.productImageSources` directly.
+
+---
+
+#### Phase 9 — Tests
+
+- [x] ✅ ISL-9a: `src/hooks/__tests__/useBannerState.test.tsx`
+  - `selectProduct` with a product that has `imageUrl` → `productImageSources` has one catalogue source with `bgRemovalStatus: 'idle'`, `activeProductImageSourceId === 'catalogue'`.
+  - `selectProduct(null)` → `productImageSources` is `[]`, `activeProductImageSourceId` is `null`.
+  - `selectProduct` when user sources exist → user sources are cleared; only catalogue source remains.
+  - `addProductImageSource` → source appended; becomes active; `bgRemovalStatus: 'idle'`.
+  - `removeProductImageSource` of active user source → active switches to the preceding source.
+  - `updateProductImageSourceBg` → updates only the targeted source; others unchanged.
+  - `toggleSourceBgRemoved` → flips `showBgRemoved` on the targeted source only.
+  - `loadState` → restores `productImageSources` and `activeProductImageSourceId`.
+
+- [x] ✅ ISL-9b: `src/hooks/__tests__/useScheduledBanners.test.ts`
+  - `resolveEntry` success: `entry.bannerState.productImageSources` has one catalogue source; `activeProductImageSourceId === 'catalogue'`.
+  - `resolveEntry` with product that has no `imageUrl`: `productImageSources` is `[]`.
+  - `removeEntryBackground` on a ready entry with idle catalogue source: source transitions `idle → removing → done`; `bgRemovedUrl` populated; `showBgRemoved` set to `true`.
+  - `toggleEntrySourceBgRemoved`: flips `showBgRemoved` on the target source only.
+  - `setEntryActiveSource`: updates `activeProductImageSourceId` on the matching entry.
+
+- [x] ✅ ISL-9c: `src/components/BannerControls/__tests__/BannerControls.test.tsx`
+  - Source list rendered when `productImageSources` is non-empty.
+  - Clicking a source thumbnail calls `onSelectProductImageSource(id)`.
+  - Remove button visible on `source === 'user'` chips; absent on `source === 'catalogue'` chip.
+  - Clicking remove calls `onRemoveProductImageSource(id)`.
+  - `BgVersionPill` shown when active source `bgRemovalStatus === 'done'`; absent otherwise.
+  - Upload zone present; uploading calls `onAddProductImage` with the new blob URL.
+
+- [x] ✅ ISL-9d: `src/components/BannerPreview/__tests__/BannerPreview.test.tsx`
+  - Catalogue source, `showBgRemoved: false` → product image renders with `selectedProduct.imageUrl`.
+  - Catalogue source, `showBgRemoved: true`, `bgRemovedUrl` set → product image renders with `bgRemovedUrl`.
+  - User source, `showBgRemoved: false` → product image renders with `source.originalUrl`.
+  - User source, `showBgRemoved: true`, `bgRemovedUrl` set → product image renders with `bgRemovedUrl`.
+  - Empty `productImageSources` → no product image rendered.
+
+---
+
+#### Phase 10 — Build and test
+
+- [x] ✅ ISL-10: `npm run build && npm run test:run` — TypeScript compiles clean; all tests pass.
+
+---
+
+#### Edge Cases (ISL)
+
+| Scenario | Behavior |
+|---|---|
+| User selects a new catalogue product | `selectProduct` clears all user sources; resets list to the new catalogue source; auto-bg-removal triggers via `'idle'` effect in App.tsx |
+| User uploads an image | `addProductImageSource` appends and activates the new source; `'idle'` effect triggers removal immediately |
+| User pastes an image | Same path as upload — `ImageUploadZone` produces a blob URL; `onAddProductImage` is called |
+| User removes an active user source | `removeProductImageSource` switches active to the last remaining source (catalogue or previous upload) |
+| User removes the only user source | Active reverts to the catalogue source |
+| Catalogue source has no imageUrl | `productImageSources` is `[]`; no selector shown; no bg removal triggered |
+| Bg removal fails for a source | `bgRemovalStatus → 'error'`; error indicator shown on chip; `BgVersionPill` not shown; no retry button (user can re-upload if needed) |
+| Scheduler auto-removal with multiple user sources | `removeEntryBackground` iterates all idle sources sequentially (same memory pattern as before) |
+| Edit-Save round trip in scheduler | `loadState` restores full source list including bg state; `updateEntryState` commits the context's source list back to the entry |
+| Switching sources mid-export | Export captures the DOM at the moment of the click; the active source's effective image is already rendered |
+| Very many user uploads | Blob URLs are revoked when a user source is removed (`removeProductImageSource`) or on date change (scheduler); no leak |
+
+---
+
+#### Files Modified (ISL)
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `ImageSource`; replace `productImageOverride` in `BannerState` with `productImageSources` + `activeProductImageSourceId`; update `ScheduledBannerEntry` |
+| `src/hooks/useBannerState.tsx` | Replace `productImageOverride` state with source list; add source management functions |
+| `src/components/BannerPreview/BannerPreview.tsx` | Derive effective image URL from active source instead of `productImageOverride` |
+| `src/components/ImageSourceList/ImageSourceList.tsx` | **New file** — thumbnail strip with status indicators and per-source `BgVersionPill` |
+| `src/components/BannerControls/BannerControls.tsx` | Replace single-image props with source list props; integrate `ImageSourceList` |
+| `src/App.tsx` | Remove flat bg state; add per-source auto-removal; remove manual bg button; update `BannerControls` props |
+| `src/hooks/useScheduledBanners.ts` | Init sources in `resolveEntry`; bg removal iterates sources; revoke blob URLs on date change |
+| `src/components/DateSchedule/ScheduledBannerCard.tsx` | Remove product bg injection; retain logo injection; thread source toggle/select props when editing |
+| `src/hooks/__tests__/useBannerState.test.tsx` | Tests for source list lifecycle |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Tests for per-entry source management and bg removal |
+| `src/components/BannerControls/__tests__/BannerControls.test.tsx` | Tests for source list UI |
+| `src/components/BannerPreview/__tests__/BannerPreview.test.tsx` | Tests for image derivation from sources |
+
+#### Files NOT Modified (ISL)
+
+- `src/services/removeBackgroundService.ts` — called as-is; no interface changes needed
+- `src/components/BgVersionPill/BgVersionPill.tsx` — reused inside `ImageSourceList`; no changes needed
+- `src/components/ImageUploadZone/ImageUploadZone.tsx` — reused as-is; parent handles "add to list" logic
+- `src/services/exportService.ts` — export captures the rendered DOM; no changes needed
+- `src/constants/bannerTemplate.ts` — no layout changes
+- `src/workers/backgroundRemoval.worker.ts` — unchanged
+
+---
+
+### Feature 3 — Quantity Sticker Re-add (QST)
+
+#### Phase 1 — Type definitions
+
+- [x] QST-1: `src/types/index.ts`
+  - Add `quantitySticker: string | null` to `ParsedProduct` — auto-detected from catalogue `quantity.unitized` (PACK unit → "PACK OF N"); null otherwise.
+  - Add to `BannerState`: `quantityStickerText: string | null` (the editable sticker text; null = no sticker) and `showQuantitySticker: boolean` (toggles sticker visibility without clearing text).
+  - Add to `SheetRow`: `quantitySticker: string` (value from the "quantity sticker" column; empty string when column absent or cell blank).
+
+---
+
+#### Phase 2 — Catalogue parser: auto-detect PACK quantity
+
+- [x] QST-2: `src/services/catalogueParser.ts` — Add a private `formatQuantitySticker(item: ApiCatalogItem): string | null` helper. It reads `item.item_details?.quantity?.unitized?.measure` first; falls back to `item.raw_source?.item_details?.quantity?.unitized?.measure`. If the resolved `unit.trim().toUpperCase() === 'PACK'` and `value` is non-empty, returns `"PACK OF ${value}"`. Returns `null` in all other cases (missing data, non-PACK unit). Call this helper in `parseApiItem` and assign its result to the `quantitySticker` field on the returned `ParsedProduct`.
+
+---
+
+#### Phase 3 — Sheets service: optional column
+
+- [x] QST-3: `src/services/sheetsService.ts` — Add `const COL_QUANTITY_STICKER = 'quantity sticker'`. Do **not** add it to the `required` array (column may not exist yet). In the `rows.map(…)` block, add:
+
+  ```ts
+  quantitySticker: colIndex[COL_QUANTITY_STICKER] !== undefined
+    ? cell(COL_QUANTITY_STICKER)
+    : '',
+  ```
+
+  This gracefully defaults to `''` if the column does not exist in the sheet yet.
+
+---
+
+#### Phase 4 — useBannerState: state + auto-populate
+
+- [x] QST-4: `src/hooks/useBannerState.tsx`
+  - Add `showQuantitySticker` state (`useState(false)`) and `quantityStickerText` state (`useState<string | null>(null)`).
+  - Add `toggleQuantitySticker` callback.
+  - In `selectProduct`: call `setQuantityStickerText(product?.quantitySticker ?? null)` and `setShowQuantitySticker(!!product?.quantitySticker)`. This auto-populates from the catalogue on product select and clears when `null` is passed.
+  - In `loadState`: restore both fields from `state`.
+  - Add all four to `BannerContextType` interface and to the `value` object.
+
+---
+
+#### Phase 5 — useScheduledBanners: default state + sheet override
+
+- [x] QST-5: `src/hooks/useScheduledBanners.ts`
+  - In `defaultBannerState()`: add `quantityStickerText: null, showQuantitySticker: false`.
+  - In `resolveEntry`, in the `bannerState` assembly block, add:
+    ```ts
+    quantityStickerText: row.quantitySticker || null,
+    showQuantitySticker: !!row.quantitySticker,
+    ```
+  If the sheet column has a value, the sticker is pre-populated and visible; otherwise it stays hidden.
+
+---
+
+#### Phase 6 — Banner template constant
+
+- [x] QST-6: `src/constants/bannerTemplate.ts` — Add and export:
+
+  ```ts
+  export const QUANTITY_STICKER = {
+    /** Distance from right edge — aligns with the product image right edge */
+    right: BANNER_WIDTH - (PRODUCT_IMAGE.centerX + PRODUCT_IMAGE.width / 2), // 22px
+    /** Distance from bottom — sits just above the canvas floor */
+    bottom: PRODUCT_IMAGE.bottomOffset + 20, // 21px
+    paddingX: 10,
+    paddingY: 6,
+    borderRadius: 36,
+    fontSize: 14,
+    fontWeight: 700,
+    fontFamily: '"Inter", sans-serif',
+    color: '#FFFFFF',
+    lineHeight: 1.2,
+  }
+  ```
+
+---
+
+#### Phase 7 — BannerPreview: render sticker
+
+- [x] QST-7: `src/components/BannerPreview/BannerPreview.tsx`
+  - Import `QUANTITY_STICKER` from `@/constants/bannerTemplate`.
+  - Destructure `quantityStickerText` and `showQuantitySticker` from `state`.
+  - After the product image `<img>` block (currently the last rendered element), add the sticker div: `position: absolute`, `right: QUANTITY_STICKER.right`, `bottom: QUANTITY_STICKER.bottom`, with padding/borderRadius/font styles from the constant, `backgroundColor: ctaBgColor`, `whiteSpace: 'nowrap'`. No fixed width — the pill auto-sizes to text.
+
+---
+
+#### Phase 8 — BannerControls: sticker section
+
+- [x] QST-8: `src/components/BannerControls/BannerControls.tsx`
+  - Add four new props to `BannerControlsProps`: `showQuantitySticker: boolean`, `onQuantityStickerToggle: () => void`, `quantityStickerText: string | null`, `onQuantityStickerTextChange: (text: string | null) => void`.
+  - After the Product Image `<Section>`, add a `<Section title="Quantity Sticker">` with a `<TogglePill>` and (when `showQuantitySticker`) a text input pre-filled with `quantityStickerText ?? ''` that calls `onQuantityStickerTextChange(e.target.value || null)` on change.
+
+---
+
+#### Phase 9 — App.tsx: wire up sticker
+
+- [x] QST-9: `src/App.tsx`
+  - Destructure `showQuantitySticker`, `toggleQuantitySticker`, `quantityStickerText`, `setQuantityStickerText` from `useBannerState()`.
+  - Add `showQuantitySticker` and `quantityStickerText` to the `bannerState` useMemo and its dependency array.
+  - Pass four new props to `<BannerControls>`.
+
+---
+
+#### Phase 10 — Tests
+
+- [x] QST-10: `src/services/__tests__/sheetsService.test.ts` — Test with "quantity sticker" column present → assert field populated. Test without column → assert field defaults to `''` without throwing.
+
+- [x] QST-11: `src/services/__tests__/catalogueParser.test.ts` — Test `parseApiItem` with PACK unit → `quantitySticker === 'PACK OF 5'`. Test non-PACK unit → `null`. Test via `raw_source` fallback path. Test missing `quantity` field → `null`.
+
+- [x] QST-12: `src/hooks/__tests__/useScheduledBanners.test.ts` — Assert sheet row with `quantitySticker: 'PACK OF 3'` → `bannerState.quantityStickerText === 'PACK OF 3'` and `showQuantitySticker === true`. Assert empty string → `null` / `false`.
+
+- [x] QST-13: `src/components/BannerControls/__tests__/BannerControls.test.tsx` — Assert sticker section visible when `showQuantitySticker = true`; input shows text; typing calls `onQuantityStickerTextChange`. Assert input absent when `showQuantitySticker = false`.
+
+- [x] QST-14: `npm run build && npm run test:run` — TypeScript compiles clean; all tests pass.
+
+---
+
+#### Edge Cases (QST)
+
+| Scenario | Behavior |
+|---|---|
+| Catalogue item has PACK unit but no value | `formatQuantitySticker` returns `null`; no sticker auto-populated |
+| User clears the sticker text input | `onQuantityStickerTextChange(null)` → `quantityStickerText = null`; sticker disappears even with toggle ON |
+| User switches products | `selectProduct` resets both fields to the new product's catalogue value (or null/false) |
+| Sheet column not yet added | `fetchSheetRows` returns `quantitySticker: ''` for all rows; `showQuantitySticker` stays false; no sticker rendered |
+| Sheet has value but product image is absent | Sticker still renders (absolutely positioned within the banner, not dependent on the img element) |
+| Scheduled banner edit mode | `loadState` restores both `showQuantitySticker` and `quantityStickerText`; user can edit text live |
+| Sticker text very long | `whiteSpace: 'nowrap'` keeps it on one line; pill grows with text |
+
+---
+
+#### Files Modified (QST)
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `quantitySticker` to `ParsedProduct`; add `quantityStickerText` + `showQuantitySticker` to `BannerState`; add `quantitySticker` to `SheetRow` |
+| `src/services/catalogueParser.ts` | Add `formatQuantitySticker` helper; set field in `parseApiItem` |
+| `src/services/sheetsService.ts` | Add optional `COL_QUANTITY_STICKER` column parsing |
+| `src/hooks/useBannerState.tsx` | Add state + toggle + auto-populate in `selectProduct` + restore in `loadState`; expose on context |
+| `src/hooks/useScheduledBanners.ts` | Add fields to `defaultBannerState`; pass sheet value in `resolveEntry` |
+| `src/constants/bannerTemplate.ts` | Add and export `QUANTITY_STICKER` constant |
+| `src/components/BannerPreview/BannerPreview.tsx` | Import constant; destructure sticker state; render pill overlay |
+| `src/components/BannerControls/BannerControls.tsx` | Add four new props; render Quantity Sticker section |
+| `src/App.tsx` | Destructure new state; add to `bannerState` useMemo; pass four props to `BannerControls` |
+| `src/services/__tests__/sheetsService.test.ts` | Tests for optional column parsing |
+| `src/services/__tests__/catalogueParser.test.ts` | Tests for `formatQuantitySticker` |
+| `src/hooks/__tests__/useScheduledBanners.test.ts` | Tests for sticker passthrough from sheet row |
+| `src/components/BannerControls/__tests__/BannerControls.test.tsx` | Tests for sticker section UI |
+
+#### Files NOT Modified (QST)
+
+- `src/services/exportService.ts` — export captures the DOM including the sticker automatically
+- `src/components/DateSchedule/ScheduledBannersGrid.tsx` — no new props needed; data flows through `BannerState`
+- `src/components/DateSchedule/ScheduledBannerCard.tsx` — unchanged; sticker renders via `BannerPreview`

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import type { BackgroundOption, ProductPrice } from '@/types'
+import type { BackgroundOption, ProductPrice, ImageSource } from '@/types'
 import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 import BackgroundGallery from '@/components/BackgroundGallery/BackgroundGallery'
 import ImageUploadZone from '@/components/ImageUploadZone/ImageUploadZone'
 import BgVersionPill from '@/components/BgVersionPill/BgVersionPill'
+import ImageSourceList from '@/components/ImageSourceList/ImageSourceList'
 
 const CTA_PRESETS = ['SHOP NOW', 'BUY NOW', 'ORDER NOW']
 const BADGE_PRESETS = ['Free Delivery', 'New Arrival', 'Limited Offer']
@@ -52,23 +53,21 @@ interface BannerControlsProps {
   /** Zoom scale for the brand logo (1 = 100%). Range [0.5, 2.0]. */
   logoScale: number
   onLogoScaleChange: (scale: number) => void
-  /** Current product image override (blob URL). null = catalogue image. */
-  productImageOverride: string | null
-  onProductImageChange: (url: string | null) => void
   /** Zoom scale for the product image (1 = 100%). Range [0.5, 2.0]. */
   productImageScale: number
   onProductImageScaleChange: (scale: number) => void
-  // --- IT-10: bg-version toggle props ---
-  /**
-   * True once a background-removed product image blob URL is available.
-   * When true, a two-segment "Original / BG Removed" pill is shown beneath
-   * the Product Image upload zone.
-   */
-  hasBgRemovedProduct: boolean
-  /** Whether the bg-removed product image version is currently displayed */
-  showBgRemovedProduct: boolean
-  /** Called when the user clicks either segment of the product image version pill */
-  onToggleBgRemovedProduct: () => void
+  // --- ISL: source list props ---
+  productImageSources: ImageSource[]
+  activeProductImageSourceId: string | null
+  /** Called with the blob URL when the user uploads or pastes a new image */
+  onAddProductImage: (url: string) => void
+  onRemoveProductImageSource: (id: string) => void
+  onSelectProductImageSource: (id: string) => void
+  onToggleSourceBgRemoved: (id: string) => void
+  showQuantitySticker: boolean
+  onQuantityStickerToggle: () => void
+  quantityStickerText: string | null
+  onQuantityStickerTextChange: (text: string | null) => void
   /**
    * True once a background-removed brand logo blob URL is available.
    * When true, a version pill is shown beneath the Brand Logo upload zone.
@@ -115,13 +114,18 @@ export default function BannerControls({
   onBrandLogoChange,
   logoScale,
   onLogoScaleChange,
-  productImageOverride,
-  onProductImageChange,
   productImageScale,
   onProductImageScaleChange,
-  hasBgRemovedProduct,
-  showBgRemovedProduct,
-  onToggleBgRemovedProduct,
+  productImageSources,
+  activeProductImageSourceId,
+  onAddProductImage,
+  onRemoveProductImageSource,
+  onSelectProductImageSource,
+  onToggleSourceBgRemoved,
+  showQuantitySticker,
+  onQuantityStickerToggle,
+  quantityStickerText,
+  onQuantityStickerTextChange,
   hasBgRemovedLogo,
   showBgRemovedLogo,
   onToggleBgRemovedLogo,
@@ -344,27 +348,43 @@ export default function BannerControls({
         )}
       </Section>
 
-      {/* Product Image — upload zone + zoom slider + bg-version pill (IT-11) */}
+      {/* Product Image — source list + add via upload + zoom slider */}
       <Section title="Product Image">
         <div className="space-y-2">
+          {productImageSources.length > 0 && (
+            <ImageSourceList
+              sources={productImageSources}
+              activeSourceId={activeProductImageSourceId}
+              onSelect={onSelectProductImageSource}
+              onRemove={onRemoveProductImageSource}
+              onToggleBgRemoved={onToggleSourceBgRemoved}
+            />
+          )}
           <ImageUploadZone
-            currentImage={productImageOverride}
-            onImageChange={onProductImageChange}
-            label="Product Image"
+            currentImage={null}
+            onImageChange={url => { if (url) onAddProductImage(url) }}
+            label="Add Image"
           />
           <ZoomSlider
             scale={productImageScale}
             onChange={onProductImageScaleChange}
             onReset={() => onProductImageScaleChange(1)}
           />
-          {/* IT-11: show version toggle only when a bg-removed blob is ready */}
-          {hasBgRemovedProduct && (
-            <BgVersionPill
-              showBgRemoved={showBgRemovedProduct}
-              onToggle={onToggleBgRemovedProduct}
-            />
-          )}
         </div>
+      </Section>
+
+      {/* Quantity Sticker — toggle + editable text */}
+      <Section title="Quantity Sticker">
+        <TogglePill checked={showQuantitySticker} onToggle={onQuantityStickerToggle} />
+        {showQuantitySticker && (
+          <input
+            type="text"
+            value={quantityStickerText ?? ''}
+            onChange={(e) => onQuantityStickerTextChange(e.target.value || null)}
+            className="input-base mt-2"
+            placeholder="e.g. PACK OF 5"
+          />
+        )}
       </Section>
 
     </div>

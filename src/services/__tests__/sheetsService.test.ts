@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   filterRowsForDate,
   extractProductUrl,
@@ -18,6 +18,7 @@ function makeRow(overrides: Partial<SheetRow> = {}): SheetRow {
     page: 'Banner',
     offerCallout: 'Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?item_id=abc&bpp_id=x&domain=y&provider_id=z',
     comments: 'Header: Fresh Fruits\nSubheader: Starting at ₹85',
+    quantitySticker: '',
     ...overrides,
   }
 }
@@ -34,17 +35,25 @@ describe('filterRowsForDate', () => {
     makeRow({ date: '3/31/2026', team: 'bazar page',  page: 'Banner' }),   // wrong date
     makeRow({ date: '3/30/2026', team: 'Bazar Page',  page: 'Banner' }),   // team casing
     makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'banner' }),   // page casing
+    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'Supermall' }), // supermall page
+    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'supermall' }), // supermall casing
   ]
 
-  it('returns rows matching date, team=bazar page, page=Banner', () => {
+  it('returns rows matching date, team=bazar page, page=Banner or Supermall', () => {
     const result = filterRowsForDate(rows, '03/30/2026')
-    // Rows 0, 4, 5 match (casing is normalised)
-    expect(result).toHaveLength(3)
+    // Rows 0, 4, 5, 6, 7 match (casing is normalised)
+    expect(result).toHaveLength(5)
   })
 
   it('excludes rows with wrong page', () => {
     const result = filterRowsForDate(rows, '03/30/2026')
-    expect(result.every(r => r.page.toLowerCase() === 'banner')).toBe(true)
+    const allowedPages = ['banner', 'supermall']
+    expect(result.every(r => allowedPages.includes(r.page.trim().toLowerCase()))).toBe(true)
+  })
+
+  it('includes supermall page rows', () => {
+    const result = filterRowsForDate(rows, '03/30/2026')
+    expect(result.some(r => r.page.toLowerCase() === 'supermall')).toBe(true)
   })
 
   it('excludes rows with wrong team', () => {
@@ -186,5 +195,79 @@ describe('parseComments', () => {
   it('handles headers with special characters and rupee symbols', () => {
     const result = parseComments('Header: Premium Deals — ₹99 Only!\nSubheader: Limited time')
     expect(result.heading).toBe('Premium Deals — ₹99 Only!')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// QST-10: fetchSheetRows — optional "quantity sticker" column
+// ---------------------------------------------------------------------------
+
+describe('QST-10: fetchSheetRows — optional quantity sticker column', () => {
+  /**
+   * Build a minimal gviz/tq-style JSONP response with the given columns and rows.
+   */
+  function buildGvizJsonp(cols: string[], rows: Array<Array<string | null>>): string {
+    const colDefs = cols.map(label => ({ label, type: 'string', id: label }))
+    const rowDefs = rows.map(cells => ({
+      c: cells.map(v => (v === null ? null : { v })),
+    }))
+    const payload = JSON.stringify({ table: { cols: colDefs, rows: rowDefs } })
+    return `/*O_o*/\ngoogle.visualization.Query.setResponse(${payload});`
+  }
+
+  const REQUIRED_COLS = [
+    'Date',
+    'Team',
+    'Page\nHomepage/Food/Grocery etc',
+    'Offer callout',
+    'Comments',
+  ]
+
+  it('populates quantitySticker when the column is present and non-empty', async () => {
+    const cols = [...REQUIRED_COLS, 'quantity sticker']
+    const rows = [['3/30/2026', 'bazar page', 'Banner', 'callout', 'comments', 'PACK OF 3']]
+    const jsonp = buildGvizJsonp(cols, rows)
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(jsonp),
+    } as unknown as Response)
+
+    const { fetchSheetRows } = await import('../sheetsService')
+    const result = await fetchSheetRows()
+
+    expect(result[0]!.quantitySticker).toBe('PACK OF 3')
+  })
+
+  it('defaults quantitySticker to empty string when the column is absent', async () => {
+    const cols = REQUIRED_COLS
+    const rows = [['3/30/2026', 'bazar page', 'Banner', 'callout', 'comments']]
+    const jsonp = buildGvizJsonp(cols, rows)
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(jsonp),
+    } as unknown as Response)
+
+    const { fetchSheetRows } = await import('../sheetsService')
+    const result = await fetchSheetRows()
+
+    expect(result[0]!.quantitySticker).toBe('')
+  })
+
+  it('defaults quantitySticker to empty string when cell is blank', async () => {
+    const cols = [...REQUIRED_COLS, 'quantity sticker']
+    const rows = [['3/30/2026', 'bazar page', 'Banner', 'callout', 'comments', null]]
+    const jsonp = buildGvizJsonp(cols, rows)
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(jsonp),
+    } as unknown as Response)
+
+    const { fetchSheetRows } = await import('../sheetsService')
+    const result = await fetchSheetRows()
+
+    expect(result[0]!.quantitySticker).toBe('')
   })
 })

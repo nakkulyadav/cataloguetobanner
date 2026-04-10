@@ -24,6 +24,12 @@ export interface ParsedProduct {
   provider: ProviderDetails;
   /** Formatted prices from catalogue. Undefined when price data is missing/invalid. */
   price?: ProductPrice;
+  /**
+   * Auto-detected quantity sticker text from the catalogue.
+   * Set when the item's unitized measure unit is "PACK", e.g. "PACK OF 5".
+   * null when not applicable.
+   */
+  quantitySticker: string | null;
 }
 
 export interface ProductGroup {
@@ -158,6 +164,40 @@ export interface BackgroundOption {
   ctaTextColor: string;
 }
 
+// --- Image source ---
+
+/**
+ * A single product image available for the banner.
+ * The catalogue image is always present when a product is selected;
+ * additional user-uploaded/pasted images are appended as 'user' sources.
+ * Each source independently tracks its own background-removal state so the
+ * user can toggle between the original and bg-removed version per image.
+ */
+export interface ImageSource {
+  /** Unique key — 'catalogue' for the product's catalogue image, UUID for user uploads */
+  id: string;
+  /** Display label shown in the image selector (e.g. "Catalogue", "Upload 1") */
+  label: string;
+  /**
+   * Original image URL.
+   * For 'catalogue' sources this is the product imageUrl from the catalogue.
+   * For 'user' sources this is a blob: URL created from the uploaded file.
+   */
+  originalUrl: string;
+  /** Blob URL of the background-removed version. null until processing completes. */
+  bgRemovedUrl: string | null;
+  /** Lifecycle of the background-removal worker for this image. */
+  bgRemovalStatus: 'idle' | 'removing' | 'done' | 'error';
+  /**
+   * Whether to display the bg-removed version (true) or the original (false).
+   * Automatically flipped to true after successful removal so the result is
+   * immediately visible.
+   */
+  showBgRemoved: boolean;
+  /** Origin — 'catalogue' sources cannot be removed from the list by the user. */
+  source: 'catalogue' | 'user';
+}
+
 // --- Banner state ---
 
 export interface BannerState {
@@ -184,8 +224,24 @@ export interface BannerState {
   productNameOverride: string | null;
   /** Custom price override for the banner. null = use original catalogue prices. */
   priceOverride: ProductPrice | null;
-  /** Uploaded product image blob URL override. null = use catalogue image. */
-  productImageOverride: string | null;
+  /**
+   * All available product images for this banner.
+   * Always contains the catalogue source when a product is selected.
+   * User-uploaded/pasted images are appended as additional 'user' sources.
+   * Each entry carries its own bg-removal state and show/hide toggle.
+   */
+  productImageSources: ImageSource[];
+  /** ID of the currently displayed image source. null when list is empty. */
+  activeProductImageSourceId: string | null;
+  /**
+   * All available brand logo images for this banner.
+   * Always contains a 'catalogue' source when the product's provider has a brandLogo.
+   * User-uploaded/pasted logos are appended as additional 'user' sources.
+   * Each entry carries its own bg-removal state and show/hide toggle.
+   */
+  logoImageSources: ImageSource[];
+  /** ID of the currently displayed logo source. null when list is empty. */
+  activeLogoImageSourceId: string | null;
   /**
    * Scale factor applied to the brand logo image (1 = 100%, 0.5 = 50%, 2 = 200%).
    * Uses CSS transform:scale() so the layout box remains fixed.
@@ -196,6 +252,14 @@ export interface BannerState {
    * Uses CSS transform:scale() so the layout box remains fixed.
    */
   productImageScale: number;
+  /**
+   * Editable text for the quantity sticker pill overlaid on the product image.
+   * null = no sticker displayed (even when showQuantitySticker is true).
+   * Auto-populated from ParsedProduct.quantitySticker on product select.
+   */
+  quantityStickerText: string | null;
+  /** Whether the quantity sticker pill is visible on the banner. */
+  showQuantitySticker: boolean;
 }
 
 // --- Scheduled Banners (Google Sheets integration) ---
@@ -223,6 +287,11 @@ export interface SheetRow {
    * Contains "Header: ..." and "Subheader: ..." labels on separate lines.
    */
   comments: string;
+  /**
+   * Value from the optional "quantity sticker" column.
+   * Empty string when the column is absent or the cell is blank.
+   */
+  quantitySticker: string;
 }
 
 /**
@@ -241,54 +310,25 @@ export interface ScheduledBannerEntry {
    * Includes product data from the API merged with sheet overrides
    * (price, heading, subheading).
    *
-   * NOTE (IT-3): `removeAllBackgrounds()` no longer writes processed blob
-   * URLs into this object. Background-removed images live in the dedicated
-   * `bgRemovedProductImageUrl` and `bgRemovedLogoUrl` fields below so the
-   * user can toggle between versions without re-running WASM inference.
+   * Product image and logo bg-removal state lives inside each ImageSource entry in
+   * `bannerState.productImageSources` / `bannerState.logoImageSources`, allowing
+   * per-image toggle between original and bg-removed versions without re-running WASM.
    */
   bannerState: BannerState | null;
   /** Human-readable error message, set when status === 'error' */
   error: string | null;
   /**
-   * Lifecycle status of the background removal operation for this entry.
-   * Only meaningful when status === 'ready'.
+   * Overall lifecycle of background removal for this entry.
+   * Reflects the combined status across all product image sources and logo sources.
    *
    *   idle     — not yet processed (initial state)
-   *   removing — currently running @imgly/background-removal
-   *   done     — completed; see bgRemovedProductImageUrl / bgRemovedLogoUrl
-   *   error    — failed; bgRemovalError holds the reason
+   *   removing — at least one image is currently being processed
+   *   done     — all images processed (individual source errors noted in bgRemovalError)
+   *   error    — processing failed entirely; bgRemovalError holds the reason
    */
   bgRemovalStatus: 'idle' | 'removing' | 'done' | 'error';
   /** Human-readable failure reason, set when bgRemovalStatus === 'error' */
   bgRemovalError: string | null;
-  /**
-   * Blob URL of the background-removed product image produced by
-   * `removeAllBackgrounds()`. Stored here (not in bannerState) so the user
-   * can toggle between original and bg-removed without re-running WASM.
-   *
-   * `null` until background removal has run for this entry.
-   * Revoked and replaced if removal runs again; revoked on date change.
-   */
-  bgRemovedProductImageUrl: string | null;
-  /**
-   * Blob URL of the background-removed brand logo produced by
-   * `removeAllBackgrounds()`. Same lifecycle as bgRemovedProductImageUrl.
-   *
-   * `null` until background removal has run for this entry.
-   */
-  bgRemovedLogoUrl: string | null;
-  /**
-   * Controls whether the bg-removed product image is shown on this card.
-   * `true` injects bgRemovedProductImageUrl into the display state.
-   * Defaults to `true` so the banner immediately reflects bg removal.
-   */
-  showBgRemovedProduct: boolean;
-  /**
-   * Controls whether the bg-removed brand logo is shown on this card.
-   * `true` injects bgRemovedLogoUrl into the display state.
-   * Defaults to `true` so the banner immediately reflects bg removal.
-   */
-  showBgRemovedLogo: boolean;
 }
 
 // --- Logging ---

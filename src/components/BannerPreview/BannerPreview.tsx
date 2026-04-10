@@ -36,10 +36,12 @@ import {
   SUBHEADING_TEXT_HEIGHT,
   CTA_HEIGHT,
   TNC_HEIGHT,
+  QUANTITY_STICKER,
 } from '@/constants/bannerTemplate'
 
 interface BannerPreviewProps {
   state: BannerState
+  isRemovingBg?: boolean
 }
 
 // --- Element identifiers for the dynamic layout system ---
@@ -78,7 +80,7 @@ function getGapBetween(a: ElementId, b: ElementId): number {
  *   Right → product image (bottom-aligned), offer badge (top-right flush)
  */
 const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
-  ({ state }, ref) => {
+  ({ state, isRemovingBg = false }, ref) => {
     const {
       selectedProduct,
       selectedBackground,
@@ -96,9 +98,12 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       brandLogoOverride,
       productNameOverride,
       priceOverride,
-      productImageOverride,
+      productImageSources,
+      activeProductImageSourceId,
       logoScale,
       productImageScale,
+      quantityStickerText,
+      showQuantitySticker,
     } = state
 
     const brandLogo = brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
@@ -109,9 +114,17 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
     // Use price override if set, otherwise fall back to catalogue prices
     const displayPrice = priceOverride ?? selectedProduct?.price
 
-    // Effective product image: override > catalogue
-    const effectiveImageUrl = productImageOverride ?? selectedProduct?.imageUrl
-    const hasValidImage = productImageOverride
+    // Derive effective product image from the active source
+    const activeSource = productImageSources.find(s => s.id === activeProductImageSourceId)
+    const effectiveImageUrl: string | undefined =
+      activeSource
+        ? (activeSource.showBgRemoved && activeSource.bgRemovedUrl)
+            ? activeSource.bgRemovedUrl
+            : activeSource.source === 'user'
+                ? activeSource.originalUrl
+                : selectedProduct?.imageUrl
+        : selectedProduct?.imageUrl
+    const hasValidImage = activeSource?.source === 'user'
       ? true
       : selectedProduct?.hasValidImage ?? false
 
@@ -563,6 +576,37 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           </div>
         )}
 
+        {/* Spinner overlay — covers right half while bg removal is in progress */}
+        {isRemovingBg && (
+          <>
+            <style>{`@keyframes abr-spin{to{transform:rotate(360deg)}}`}</style>
+            <div
+              style={{
+                position: 'absolute',
+                left: IMAGE_LEFT_BARRIER,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  border: '3px solid white',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'abr-spin 0.8s linear infinite',
+                }}
+              />
+            </div>
+          </>
+        )}
+
         {/* Product Image (right half, bottom-aligned, centered at x=541.5) */}
         {hasValidImage && effectiveImageUrl && (
           <img
@@ -586,6 +630,31 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               objectFit: 'contain',
             }}
           />
+        )}
+
+        {/* Quantity Sticker (pill, bottom-right of product image area) */}
+        {showQuantitySticker && quantityStickerText && (
+          <div
+            style={{
+              position: 'absolute',
+              right: QUANTITY_STICKER.right,
+              bottom: QUANTITY_STICKER.bottom,
+              paddingLeft: QUANTITY_STICKER.paddingX,
+              paddingRight: QUANTITY_STICKER.paddingX,
+              paddingTop: QUANTITY_STICKER.paddingY,
+              paddingBottom: QUANTITY_STICKER.paddingY,
+              borderRadius: QUANTITY_STICKER.borderRadius,
+              fontSize: QUANTITY_STICKER.fontSize,
+              fontWeight: QUANTITY_STICKER.fontWeight,
+              fontFamily: QUANTITY_STICKER.fontFamily,
+              color: QUANTITY_STICKER.color,
+              lineHeight: QUANTITY_STICKER.lineHeight,
+              backgroundColor: ctaBgColor,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {quantityStickerText}
+          </div>
         )}
 
       </div>

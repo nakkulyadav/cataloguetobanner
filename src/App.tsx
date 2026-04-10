@@ -62,7 +62,8 @@ function App() {
     showCta,
     showSubheading,
     subheadingText,
-    productImageOverride,
+    productImageSources,
+    activeProductImageSourceId,
     selectProduct,
     selectBackground,
     setCtaText,
@@ -77,7 +78,11 @@ function App() {
     setTncText,
     setProductNameOverride,
     setBrandLogoOverride,
-    setProductImageOverride,
+    addProductImageSource,
+    removeProductImageSource,
+    setActiveProductImageSource,
+    updateProductImageSourceBg,
+    toggleSourceBgRemoved,
     priceOverride,
     setPriceOverride,
     setSubheadingText,
@@ -85,6 +90,10 @@ function App() {
     productImageScale,
     setLogoScale,
     setProductImageScale,
+    quantityStickerText,
+    showQuantitySticker,
+    toggleQuantitySticker,
+    setQuantityStickerText,
     loadState,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
@@ -155,138 +164,97 @@ function App() {
   const activeProviderName = directLookup.providerResult?.provider?.name
     ?? selectedProvider?.name
 
-  // --- Remove Background state (local to App) ---
-  const [bgRemovedProductUrl, setBgRemovedProductUrl] = useState<string | null>(null)
+  // --- Logo bg removal state (unchanged from before) ---
   const [bgRemovedLogoUrl, setBgRemovedLogoUrl] = useState<string | null>(null)
-  const [isRemovingBg, setIsRemovingBg] = useState(false)
-
-  /**
-   * IT-6: Per-image toggle flags — whether to display the bg-removed version.
-   * Defaults to false (show original). Flipped to true automatically after
-   * a successful removal call, and reset to false when the source image changes
-   * (product switch, upload override change).
-   */
-  const [showBgRemovedProduct, setShowBgRemovedProduct] = useState(false)
   const [showBgRemovedLogo, setShowBgRemovedLogo] = useState(false)
 
-  // Clean up blob URLs on unmount
+  // Clean up logo blob URL on unmount
   useEffect(() => {
     return () => {
-      if (bgRemovedProductUrl) URL.revokeObjectURL(bgRemovedProductUrl)
       if (bgRemovedLogoUrl) URL.revokeObjectURL(bgRemovedLogoUrl)
     }
-  }, [bgRemovedProductUrl, bgRemovedLogoUrl])
+  }, [bgRemovedLogoUrl])
 
-  // Reset processed URLs when selected product changes (IT-7: also reset toggle flags)
+  // Reset logo bg state when selected product changes
   useEffect(() => {
-    if (bgRemovedProductUrl) URL.revokeObjectURL(bgRemovedProductUrl)
     if (bgRemovedLogoUrl) URL.revokeObjectURL(bgRemovedLogoUrl)
-    setBgRemovedProductUrl(null)
     setBgRemovedLogoUrl(null)
-    // IT-7: hide toggle buttons when the product changes
-    setShowBgRemovedProduct(false)
     setShowBgRemovedLogo(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id])
 
-  // Reset processed logo when brand logo override changes (IT-7)
+  // Reset logo bg state when brand logo override changes
   useEffect(() => {
     if (bgRemovedLogoUrl) {
       URL.revokeObjectURL(bgRemovedLogoUrl)
       setBgRemovedLogoUrl(null)
     }
-    // IT-7: hide logo toggle when the source image changes
     setShowBgRemovedLogo(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandLogoOverride])
 
-  // Reset processed product image when product image override changes (IT-7)
+  // --- Per-source bg removal ---
+  const runBgRemovalForSource = useCallback(async (sourceId: string, sourceUrl: string) => {
+    updateProductImageSourceBg(sourceId, { bgRemovedUrl: null, bgRemovalStatus: 'removing', showBgRemoved: false })
+    try {
+      const resultUrl = await removeBackground(sourceUrl)
+      updateProductImageSourceBg(sourceId, {
+        bgRemovedUrl: resultUrl,
+        bgRemovalStatus: 'done',
+        showBgRemoved: true,
+      })
+    } catch (err) {
+      updateProductImageSourceBg(sourceId, { bgRemovedUrl: null, bgRemovalStatus: 'error', showBgRemoved: false })
+      const msg = err instanceof Error ? err.message : String(err)
+      addLog('error', `Failed to remove background: ${msg}`)
+    }
+  }, [updateProductImageSourceBg, addLog])
+
+  // Auto-trigger bg removal for any newly-added idle source
   useEffect(() => {
-    if (bgRemovedProductUrl) {
-      URL.revokeObjectURL(bgRemovedProductUrl)
-      setBgRemovedProductUrl(null)
-    }
-    // IT-7: hide product toggle when the source image changes
-    setShowBgRemovedProduct(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productImageOverride])
-
-  /**
-   * Calls remove.bg for both the product image and brand logo (if available).
-   * Uses Promise.allSettled so one failure doesn't block the other.
-   */
-  const handleRemoveBackground = useCallback(async () => {
-    if (!selectedProduct) return
-
-    const productImageUrl = productImageOverride ?? selectedProduct.imageUrl
-    const logoUrl = brandLogoOverride ?? selectedProduct.provider.brandLogo
-
-    if (!productImageUrl && !logoUrl) return
-
-    setIsRemovingBg(true)
-
-    const tasks: Array<{ label: string; url: string }> = []
-    if (productImageUrl) tasks.push({ label: 'product image', url: productImageUrl })
-    if (logoUrl) tasks.push({ label: 'brand logo', url: logoUrl })
-
-    const results = await Promise.allSettled(
-      tasks.map(({ url }) => removeBackground(url)),
-    )
-
-    let successCount = 0
-    results.forEach((result, i) => {
-      const label = tasks[i]?.label ?? 'image'
-      if (result.status === 'fulfilled') {
-        if (label === 'product image') {
-          setBgRemovedProductUrl(result.value)
-          // IT-6: auto-flip toggle to "BG Removed" on success so the result
-          // is immediately visible without a manual click
-          setShowBgRemovedProduct(true)
-        } else {
-          setBgRemovedLogoUrl(result.value)
-          // IT-6: same auto-flip for the logo
-          setShowBgRemovedLogo(true)
-        }
-        successCount++
-      } else {
-        const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason)
-        addLog('error', `Failed to remove background from ${label}: ${errMsg}`)
+    for (const source of productImageSources) {
+      if (source.bgRemovalStatus === 'idle') {
+        void runBgRemovalForSource(source.id, source.originalUrl)
       }
-    })
-
-    if (successCount > 0) {
-      addLog('info', `Background removed from ${successCount} image${successCount > 1 ? 's' : ''}`)
     }
+  }, [productImageSources, runBgRemovalForSource])
 
-    setIsRemovingBg(false)
-  }, [selectedProduct, brandLogoOverride, productImageOverride, addLog])
+  // --- Logo bg removal (triggered once when product loads) ---
+  const handleRemoveLogoBackground = useCallback(async () => {
+    const logoUrl = brandLogoOverride ?? selectedProduct?.provider.brandLogo
+    if (!logoUrl) return
+    try {
+      const resultUrl = await removeBackground(logoUrl)
+      setBgRemovedLogoUrl(resultUrl)
+      setShowBgRemovedLogo(true)
+      addLog('info', 'Background removed from brand logo')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      addLog('error', `Failed to remove background from brand logo: ${msg}`)
+    }
+  }, [brandLogoOverride, selectedProduct, addLog])
 
-  // Remove Background button disabled state
-  const hasProductImage = !!(productImageOverride ?? selectedProduct?.imageUrl)
-  const hasLogo = !!(brandLogoOverride ?? selectedProduct?.provider.brandLogo)
-  const allAlreadyProcessed =
-    (!hasProductImage || !!bgRemovedProductUrl) &&
-    (!hasLogo || !!bgRemovedLogoUrl)
-  const removeBgDisabled = !selectedProduct || isRemovingBg || allAlreadyProcessed
+  // Auto-trigger logo removal when a product is selected
+  useEffect(() => {
+    if (selectedProduct) {
+      void handleRemoveLogoBackground()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProduct?.id])
+
+  // Derived: is any source currently being processed?
+  const isRemovingBg = productImageSources.some(s => s.bgRemovalStatus === 'removing')
+
+  // Handler called from BannerControls when user uploads/pastes a product image
+  const handleAddProductImage = useCallback((url: string) => {
+    addProductImageSource(url)
+    // The useEffect above picks up the new 'idle' source and triggers removal
+  }, [addProductImageSource])
 
   // Assemble BannerState for the preview component.
-  //
-  // IT-8: The toggle flags (showBgRemovedProduct / showBgRemovedLogo) control
-  // which image version is injected into the preview. When a toggle is ON and a
-  // bg-removed blob URL exists, that URL is used; otherwise the original source
-  // (user upload override or catalogue image) is shown.
-  //
-  // Injection is done via productImageOverride / brandLogoOverride so that
-  // BannerPreview's existing priority chain (override > catalogue) is respected
-  // regardless of whether the user has also uploaded a custom image.
+  // Logo bg state is injected via brandLogoOverride; product image is derived
+  // inside BannerPreview from productImageSources + activeProductImageSourceId.
   const bannerState: BannerState = useMemo(() => {
-    // Product image: if toggle ON and blob ready → show bg-removed; else original
-    const effectiveProductImageOverride =
-      (showBgRemovedProduct && bgRemovedProductUrl)
-        ? bgRemovedProductUrl
-        : productImageOverride
-
-    // Brand logo: if toggle ON and blob ready → show bg-removed; else original
     const effectiveBrandLogo =
       (showBgRemovedLogo && bgRemovedLogoUrl)
         ? bgRemovedLogoUrl
@@ -309,9 +277,12 @@ function App() {
       brandLogoOverride: effectiveBrandLogo,
       productNameOverride,
       priceOverride,
-      productImageOverride: effectiveProductImageOverride,
+      productImageSources,
+      activeProductImageSourceId,
       logoScale,
       productImageScale,
+      quantityStickerText,
+      showQuantitySticker,
     }
   }, [
     selectedProduct,
@@ -330,22 +301,19 @@ function App() {
     brandLogoOverride,
     productNameOverride,
     priceOverride,
-    productImageOverride,
-    bgRemovedProductUrl,
+    productImageSources,
+    activeProductImageSourceId,
     bgRemovedLogoUrl,
-    showBgRemovedProduct,
     showBgRemovedLogo,
     logoScale,
     productImageScale,
+    quantityStickerText,
+    showQuantitySticker,
   ])
 
   /**
    * Commits the current BannerContext state back to the scheduled entry being
-   * edited, then clears the editing selection. Called when the user clicks
-   * "Save" on a scheduled banner card (ES-2).
-   *
-   * `bannerState` is safe to reference here — this callback is declared after
-   * the `bannerState` useMemo above.
+   * edited, then clears the editing selection.
    */
   const handleSaveScheduledEntry = useCallback(() => {
     if (!editingScheduledId) return
@@ -575,18 +543,8 @@ function App() {
         ) : (
           <div className="flex flex-col items-center gap-4">
             <div className="rounded-3xl overflow-hidden shadow-deep">
-              <BannerPreview ref={bannerRef} state={bannerState} />
+              <BannerPreview ref={bannerRef} state={bannerState} isRemovingBg={isRemovingBg} />
             </div>
-
-            {/* Ghost-style "Remove Background" button */}
-            <button
-              type="button"
-              onClick={handleRemoveBackground}
-              disabled={removeBgDisabled}
-              className="border border-[var(--border-muted)] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] rounded-lg px-4 py-2 text-sm transition-interaction disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              {isRemovingBg ? 'Removing Background...' : 'Remove Background'}
-            </button>
 
             <p className="text-[10px] text-[var(--text-tertiary)] self-end">722 × 312px</p>
           </div>
@@ -645,20 +603,22 @@ function App() {
             onBrandLogoChange={setBrandLogoOverride}
             logoScale={logoScale}
             onLogoScaleChange={setLogoScale}
-            productImageOverride={productImageOverride}
-            onProductImageChange={setProductImageOverride}
             productImageScale={productImageScale}
             onProductImageScaleChange={setProductImageScale}
-            // bg-version toggle props: use editing scheduled entry when in scheduled mode
-            hasBgRemovedProduct={editingScheduledEntry
-              ? !!editingScheduledEntry.bgRemovedProductImageUrl
-              : !!bgRemovedProductUrl}
-            showBgRemovedProduct={editingScheduledEntry
-              ? editingScheduledEntry.showBgRemovedProduct
-              : showBgRemovedProduct}
-            onToggleBgRemovedProduct={editingScheduledEntry
-              ? () => scheduledBanners.toggleEntryBgRemovedProduct(editingScheduledEntry.id)
-              : () => setShowBgRemovedProduct(p => !p)}
+            productImageSources={editingScheduledEntry
+              ? (editingScheduledEntry.bannerState?.productImageSources ?? productImageSources)
+              : productImageSources}
+            activeProductImageSourceId={editingScheduledEntry
+              ? (editingScheduledEntry.bannerState?.activeProductImageSourceId ?? activeProductImageSourceId)
+              : activeProductImageSourceId}
+            onAddProductImage={handleAddProductImage}
+            onRemoveProductImageSource={removeProductImageSource}
+            onSelectProductImageSource={editingScheduledEntry
+              ? (id) => scheduledBanners.setEntryActiveSource(editingScheduledEntry.id, id)
+              : setActiveProductImageSource}
+            onToggleSourceBgRemoved={editingScheduledEntry
+              ? (id) => scheduledBanners.toggleEntrySourceBgRemoved(editingScheduledEntry.id, id)
+              : toggleSourceBgRemoved}
             hasBgRemovedLogo={editingScheduledEntry
               ? !!editingScheduledEntry.bgRemovedLogoUrl
               : !!bgRemovedLogoUrl}
@@ -668,6 +628,10 @@ function App() {
             onToggleBgRemovedLogo={editingScheduledEntry
               ? () => scheduledBanners.toggleEntryBgRemovedLogo(editingScheduledEntry.id)
               : () => setShowBgRemovedLogo(p => !p)}
+            showQuantitySticker={showQuantitySticker}
+            onQuantityStickerToggle={toggleQuantitySticker}
+            quantityStickerText={quantityStickerText}
+            onQuantityStickerTextChange={setQuantityStickerText}
             />
             </div>
           </>
