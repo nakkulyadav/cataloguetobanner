@@ -31,6 +31,7 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof BannerControls
     showTnc: false,
     showBadge: false,
     tncText: '*T&C Apply',
+    backgrounds: [],
     selectedBackgroundId: null,
     productNameOverride: null,
     originalProductName: null,

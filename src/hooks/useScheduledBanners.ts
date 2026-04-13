@@ -1,17 +1,13 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   fetchSheetRows,
   filterRowsForDate,
-  extractProductUrl,
-  extractPrice,
-  parseComments,
 } from '@/services/sheetsService'
 import { searchCatalog } from '@/services/apiService'
 import { parseApiItems } from '@/services/catalogueParser'
 import { parseDigihaatUrl } from '@/hooks/useDirectLookup'
-import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 import { removeBackground } from '@/services/removeBackgroundService'
-import type { BannerState, ScheduledBannerEntry, SheetRow, ImageSource } from '@/types'
+import type { BannerState, BackgroundOption, ScheduledBannerEntry, SheetRow, ImageSource } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Default BannerState values — mirrors useBannerState initial state
@@ -21,9 +17,9 @@ import type { BannerState, ScheduledBannerEntry, SheetRow, ImageSource } from '@
  * Returns a base BannerState with sensible defaults for a scheduled banner.
  * Callers merge product + override fields on top of this.
  */
-function defaultBannerState(): Omit<BannerState, 'selectedProduct'> {
+function defaultBannerState(defaultBackground: BackgroundOption | null): Omit<BannerState, 'selectedProduct'> {
   return {
-    selectedBackground: BACKGROUND_OPTIONS[0] ?? null,
+    selectedBackground: defaultBackground,
     ctaText: 'SHOP NOW',
     badgeText: 'Free Delivery',
     showTnc: true,
@@ -40,6 +36,8 @@ function defaultBannerState(): Omit<BannerState, 'selectedProduct'> {
     priceOverride: null,
     productImageSources: [],
     activeProductImageSourceId: null,
+    logoImageSources: [],
+    activeLogoImageSourceId: null,
     logoScale: 1,
     productImageScale: 1,
     quantityStickerText: null,
@@ -94,11 +92,16 @@ export interface UseScheduledBannersReturn {
 // useScheduledBanners
 // ---------------------------------------------------------------------------
 
-export function useScheduledBanners(): UseScheduledBannersReturn {
+export function useScheduledBanners(defaultBackground: BackgroundOption | null = null): UseScheduledBannersReturn {
   const [selectedDate, setSelectedDate] = useState('')
   const [isFetching, setIsFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [entries, setEntries] = useState<ScheduledBannerEntry[]>([])
+
+  // Keep a ref so resolveEntry always reads the latest defaultBackground
+  // without needing to be in its useCallback dependency array.
+  const defaultBackgroundRef = useRef<BackgroundOption | null>(defaultBackground)
+  useEffect(() => { defaultBackgroundRef.current = defaultBackground }, [defaultBackground])
 
   const controllerRef = useRef<AbortController | null>(null)
 
@@ -118,12 +121,12 @@ export function useScheduledBanners(): UseScheduledBannersReturn {
 
   const resolveEntry = useCallback(
     async (row: SheetRow, id: string, signal: AbortSignal): Promise<void> => {
-      const productUrl = extractProductUrl(row.offerCallout)
+      const productUrl = row.productUrl
       if (!productUrl) {
         syncedSetEntries(prev =>
           prev.map(e =>
             e.id === id
-              ? { ...e, status: 'error', error: 'No product URL found in Offer callout' }
+              ? { ...e, status: 'error', error: 'No product URL found in sheet row' }
               : e,
           ),
         )
@@ -171,8 +174,9 @@ export function useScheduledBanners(): UseScheduledBannersReturn {
           return
         }
 
-        const { heading, subheading } = parseComments(row.comments)
-        const priceStr = extractPrice(row.offerCallout)
+        const heading = row.heading
+        const subheading = row.subheading
+        const priceStr = row.price || null
 
         // Initialise the catalogue image source
         const productImageSources: ImageSource[] = product.imageUrl
@@ -188,7 +192,7 @@ export function useScheduledBanners(): UseScheduledBannersReturn {
           : []
 
         const bannerState: BannerState = {
-          ...defaultBannerState(),
+          ...defaultBannerState(defaultBackgroundRef.current),
           selectedProduct: product,
           productImageSources,
           activeProductImageSourceId: productImageSources[0]?.id ?? null,

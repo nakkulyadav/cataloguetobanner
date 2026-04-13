@@ -77,6 +77,8 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [showSubheading, setShowSubheading] = useState(false);
   const [productImageSources, setProductImageSources] = useState<ImageSource[]>([]);
   const [activeProductImageSourceId, setActiveProductImageSourceId] = useState<string | null>(null);
+  const [logoImageSources, setLogoImageSources] = useState<ImageSource[]>([]);
+  const [activeLogoImageSourceId, setActiveLogoImageSourceId] = useState<string | null>(null);
   /** Scale factor for the brand logo (1 = 100%). Range [0.5, 2.0]. */
   const [logoScale, setLogoScale] = useState(1);
   /** Scale factor for the product image (1 = 100%). Range [0.5, 2.0]. */
@@ -112,6 +114,8 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setShowSubheading(state.showSubheading);
     setProductImageSources(state.productImageSources);
     setActiveProductImageSourceId(state.activeProductImageSourceId);
+    setLogoImageSources(state.logoImageSources);
+    setActiveLogoImageSourceId(state.activeLogoImageSourceId);
     setLogoScale(state.logoScale);
     setProductImageScale(state.productImageScale);
     setQuantityStickerText(state.quantityStickerText);
@@ -212,6 +216,63 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
   }, []);
 
+  // --- Logo image source methods (mirror product image source methods) ---
+
+  const addLogoImageSource = useCallback((url: string, label?: string): string => {
+    const id = crypto.randomUUID();
+    setLogoImageSources(prev => {
+      const userCount = prev.filter(s => s.source === 'user').length;
+      const newSource: ImageSource = {
+        id,
+        label: label ?? `Upload ${userCount + 1}`,
+        originalUrl: url,
+        bgRemovedUrl: null,
+        bgRemovalStatus: 'idle',
+        showBgRemoved: false,
+        source: 'user',
+      };
+      return [...prev, newSource];
+    });
+    setActiveLogoImageSourceId(id);
+    return id;
+  }, []);
+
+  const removeLogoImageSource = useCallback((id: string) => {
+    setLogoImageSources(prev => {
+      const source = prev.find(s => s.id === id);
+      if (!source || source.source !== 'user') return prev;
+      if (source.bgRemovedUrl?.startsWith('blob:')) URL.revokeObjectURL(source.bgRemovedUrl);
+      if (source.originalUrl.startsWith('blob:')) URL.revokeObjectURL(source.originalUrl);
+      const next = prev.filter(s => s.id !== id);
+      setActiveLogoImageSourceId(currentActive => {
+        if (currentActive !== id) return currentActive;
+        const removedIdx = prev.findIndex(s => s.id === id);
+        const fallback = next[Math.max(0, removedIdx - 1)];
+        return fallback?.id ?? null;
+      });
+      return next;
+    });
+  }, []);
+
+  const setActiveLogoImageSource = useCallback((id: string) => {
+    setActiveLogoImageSourceId(id);
+  }, []);
+
+  const updateLogoImageSourceBg = useCallback(
+    (id: string, update: Pick<ImageSource, 'bgRemovedUrl' | 'bgRemovalStatus' | 'showBgRemoved'>) => {
+      setLogoImageSources(prev =>
+        prev.map(s => (s.id === id ? { ...s, ...update } : s)),
+      );
+    },
+    [],
+  );
+
+  const toggleLogoSourceBgRemoved = useCallback((id: string) => {
+    setLogoImageSources(prev =>
+      prev.map(s => (s.id === id ? { ...s, showBgRemoved: !s.showBgRemoved } : s)),
+    );
+  }, []);
+
   const value: BannerContextType = {
     // State values
     selectedProduct,
@@ -232,6 +293,8 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     priceOverride,
     productImageSources,
     activeProductImageSourceId,
+    logoImageSources,
+    activeLogoImageSourceId,
     logoScale,
     productImageScale,
     quantityStickerText,
@@ -264,6 +327,11 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setActiveProductImageSource,
     updateProductImageSourceBg,
     toggleSourceBgRemoved,
+    addLogoImageSource,
+    removeLogoImageSource,
+    setActiveLogoImageSource,
+    updateLogoImageSourceBg,
+    toggleLogoSourceBgRemoved,
     loadState,
   };
 

@@ -1,10 +1,17 @@
-import type { SheetRow } from '@/types'
+import type { SheetRow, BackgroundOption } from '@/types'
 
 /**
  * Public Google Sheet ID for the Digihaat promotions calendar.
  * The sheet must be shared as "Anyone with the link can view".
  */
-const SHEET_ID = '17c4n6socMBDYbssb6L1jG-rSAVJ63uXB0XsOuG_jHdE'
+const SHEET_ID = '1xwxI8wGPpvSMzKgQI3AE-YCGEdP1FKV5TrNm-ay-hWA'
+
+/**
+ * Public Google Sheet ID for the backgrounds configuration.
+ * Columns: NAME | URL | CTA HEX | IsDefault?
+ * The sheet must be shared as "Anyone with the link can view".
+ */
+const BACKGROUNDS_SHEET_ID = '1ADxwPbHOcT9u2r-Higpi7v_TIrvEzbkv8VRuRKAv19A'
 
 /**
  * Google Visualization query endpoint.
@@ -18,11 +25,13 @@ const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx
 // ---------------------------------------------------------------------------
 const COL_DATE = 'Date'
 const COL_TEAM = 'Team'
-const COL_PAGE = 'Page\nHomepage/Food/Grocery etc'
-const COL_OFFER_CALLOUT = 'Offer callout'
-const COL_COMMENTS = 'Comments'
-/** Optional — column may not exist in older sheet versions. */
-const COL_QUANTITY_STICKER = 'quantity sticker'
+const COL_PAGE = 'Page'
+const COL_URL = 'URL'
+const COL_DISCOUNTED_PRICE = 'DIscounted Price'
+const COL_HEADER = 'Header'
+const COL_SUBHEADER = 'Subheader'
+/** Optional — column may not exist in all sheet versions. */
+const COL_QUANTITY_STICKER = 'Quantity Sticker'
 
 // ---------------------------------------------------------------------------
 // Types for the raw gviz/tq JSON payload
@@ -50,6 +59,99 @@ interface GvizTable {
 
 interface GvizResponse {
   table: GvizTable
+}
+
+// ---------------------------------------------------------------------------
+// Background options — fetch & parse the backgrounds config sheet
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a Google Drive share URL to a directly embeddable image URL.
+ *
+ * Input:  https://drive.google.com/file/d/{FILE_ID}/view?usp=sharing
+ * Output: https://lh3.googleusercontent.com/d/{FILE_ID}
+ *
+ * Returns the original URL unchanged if the pattern doesn't match.
+ */
+function driveShareToImageUrl(url: string): string {
+  const match = url.match(/\/file\/d\/([^/]+)/)
+  if (!match || !match[1]) return url
+  return `https://lh3.googleusercontent.com/d/${match[1]}`
+}
+
+/**
+ * Fetches the backgrounds Google Sheet and parses every row into a `BackgroundOption`.
+ * The row marked IsDefault? = "YES" (case-insensitive) is flagged via a returned
+ * `defaultId` string so callers can pick the initial selection.
+ *
+ * Expected columns: NAME | URL | CTA HEX | IsDefault?
+ *
+ * @param signal  Optional AbortSignal for request cancellation.
+ * @returns       { backgrounds, defaultId } — defaultId is null when no row is marked default.
+ * @throws        On network error, unexpected response shape, or JSONP parse failure.
+ */
+export async function fetchBackgroundOptions(
+  signal?: AbortSignal,
+): Promise<{ backgrounds: BackgroundOption[]; defaultId: string | null }> {
+  const url = `https://docs.google.com/spreadsheets/d/${BACKGROUNDS_SHEET_ID}/gviz/tq?tqx=out:json`
+  const response = await fetch(url, { signal })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch backgrounds sheet: HTTP ${response.status}`)
+  }
+
+  const rawText = await response.text()
+  const jsonText = stripJsonpWrapper(rawText)
+
+  let parsed: GvizResponse
+  try {
+    parsed = JSON.parse(jsonText) as GvizResponse
+  } catch {
+    throw new Error('Failed to parse backgrounds sheet response as JSON')
+  }
+
+  const { cols, rows } = parsed.table
+
+  const colIndex: Record<string, number> = {}
+  cols.forEach((col, i) => { colIndex[col.label] = i })
+
+  const required = ['NAME', 'URL', 'CTA HEX']
+  for (const name of required) {
+    if (colIndex[name] === undefined) {
+      throw new Error(`Required column "${name}" not found in backgrounds sheet`)
+    }
+  }
+
+  let defaultId: string | null = null
+
+  const backgrounds: BackgroundOption[] = rows
+    .map((row, i): BackgroundOption | null => {
+      const cell = (label: string): string => {
+        const idx = colIndex[label]
+        if (idx === undefined) return ''
+        const c = row.c[idx]
+        if (!c || c.v === null || c.v === undefined) return ''
+        return c.f ?? String(c.v)
+      }
+
+      const name = cell('NAME').trim()
+      const rawUrl = cell('URL').trim()
+      const ctaColor = cell('CTA HEX').trim() || '#2467CB'
+
+      // Skip rows with no name or URL
+      if (!name || !rawUrl) return null
+
+      const id = `bg-sheet-${i}`
+      const imageUrl = driveShareToImageUrl(rawUrl)
+
+      const isDefault = cell('IsDefault?').trim().toLowerCase() === 'yes'
+      if (isDefault && defaultId === null) defaultId = id
+
+      return { id, name, url: imageUrl, ctaColor, ctaTextColor: '#FFFFFF' }
+    })
+    .filter((bg): bg is BackgroundOption => bg !== null)
+
+  return { backgrounds, defaultId }
 }
 
 // ---------------------------------------------------------------------------
@@ -98,37 +200,43 @@ export async function fetchSheetRows(signal?: AbortSignal): Promise<SheetRow[]> 
   const { cols, rows } = parsed.table
 
   // Build a column-label → index map for resilient column lookup.
-  // This is robust to column reordering in the sheet.
+  // Keys are lowercased so matching is case-insensitive.
   const colIndex: Record<string, number> = {}
   cols.forEach((col, i) => {
-    colIndex[col.label] = i
+    colIndex[col.label.toLowerCase()] = i
   })
 
   // Verify required columns are present
-  const required = [COL_DATE, COL_TEAM, COL_PAGE, COL_OFFER_CALLOUT, COL_COMMENTS]
-  for (const name of required) {
-    if (colIndex[name] === undefined) {
-      throw new Error(`Required column "${name}" not found in sheet`)
-    }
+  const required = [COL_DATE, COL_TEAM, COL_PAGE, COL_URL, COL_DISCOUNTED_PRICE, COL_HEADER, COL_SUBHEADER]
+  const missing = required.filter(name => colIndex[name.toLowerCase()] === undefined)
+  if (missing.length > 0) {
+    const available = cols.map(c => `"${c.label}"`).join(', ')
+    throw new Error(`Required column(s) not found in sheet: ${missing.map(n => `"${n}"`).join(', ')}. Available columns: ${available}`)
   }
 
   return rows.map((row): SheetRow => {
     const cell = (label: string): string => {
-      const idx = colIndex[label] as number
+      const idx = colIndex[label.toLowerCase()]
+      if (idx === undefined) return ''
       const c = row.c[idx]
       if (!c || c.v === null || c.v === undefined) return ''
       // Prefer the formatted value (f) for dates/numbers, else coerce to string
       return c.f ?? String(c.v)
     }
 
+    const rawPrice = cell(COL_DISCOUNTED_PRICE).trim()
+    const price = rawPrice ? `₹${rawPrice}` : ''
+
     return {
       date: cell(COL_DATE),
       team: cell(COL_TEAM),
       page: cell(COL_PAGE),
-      offerCallout: cell(COL_OFFER_CALLOUT),
-      comments: cell(COL_COMMENTS),
-      quantitySticker: colIndex[COL_QUANTITY_STICKER] !== undefined
-        ? cell(COL_QUANTITY_STICKER)
+      productUrl: cell(COL_URL).trim(),
+      price,
+      heading: cell(COL_HEADER).trim(),
+      subheading: cell(COL_SUBHEADER).trim(),
+      quantitySticker: colIndex[COL_QUANTITY_STICKER.toLowerCase()] !== undefined
+        ? cell(COL_QUANTITY_STICKER).trim()
         : '',
     }
   })
@@ -176,92 +284,3 @@ function normaliseDateString(date: string): string {
   return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`
 }
 
-// ---------------------------------------------------------------------------
-// SB-4: extractProductUrl — pull the digihaat.in product link from Offer callout
-// ---------------------------------------------------------------------------
-
-/**
- * Extracts the first `digihaat.in/en/product` URL from the raw Offer callout text.
- *
- * The Offer callout is a multiline string like:
- *   "Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?..."
- *
- * Returns `null` when no URL is found.
- */
-export function extractProductUrl(offerCallout: string): string | null {
-  const match = offerCallout.match(/https:\/\/digihaat\.in\/en\/product\?[^\s]*/i)
-  return match ? match[0] : null
-}
-
-// ---------------------------------------------------------------------------
-// SB-5: extractPrice — pull the price number from Offer callout
-// ---------------------------------------------------------------------------
-
-/**
- * Extracts the first numeric value (with optional commas) from the Offer callout
- * and formats it as a rupee string, e.g. "₹1299".
- *
- * Examples:
- *   "Our price - 85 + Free delivery"       → "₹85"
- *   "Our price - 1,299 + Free delivery"    → "₹1299"
- *   "370"                                  → "₹370"
- *
- * Returns `null` when no number is found.
- */
-export function extractPrice(offerCallout: string): string | null {
-  // Strip URLs before matching so numbers embedded in product URLs
-  // (e.g. item IDs, query param values) don't shadow the price text.
-  const textWithoutUrls = offerCallout.replace(/https?:\/\/\S+/gi, '')
-  const match = textWithoutUrls.match(/[\d,]+/)
-  if (!match) return null
-  // Strip commas (thousands separators) and prefix ₹
-  const digits = match[0].replace(/,/g, '')
-  return `₹${digits}`
-}
-
-// ---------------------------------------------------------------------------
-// SB-6: parseComments — extract Heading and Subheading from Comments column
-// ---------------------------------------------------------------------------
-
-export interface ParsedComments {
-  /** Text after "Header:" label. Empty string if label not found. */
-  heading: string
-  /** Text after "Subheader:" label. Empty string if label not found. */
-  subheading: string
-}
-
-/**
- * Parses the "Comments" column text for "Header:" and "Subheader:" labels.
- *
- * Handles:
- *  - Case-insensitive label matching ("header:", "HEADER:", "Header:")
- *  - Leading/trailing whitespace trimming
- *  - Missing labels (returns empty string for that field)
- *
- * Example input:
- *   "Header: Fresh Fruits\nSubheader: Starts at ₹85"
- *
- * Example output:
- *   { heading: "Fresh Fruits", subheading: "Starts at ₹85" }
- */
-export function parseComments(comments: string): ParsedComments {
-  // Process line-by-line so that "Subheading:" never accidentally satisfies a
-  // "heading" search (avoids substring false-matches in multi-line regex).
-  // Each label must appear at the start of a line (after optional whitespace).
-  let heading = ''
-  let subheading = ''
-
-  for (const line of comments.split('\n')) {
-    const headingMatch = line.match(/^\s*header\s*:\s*(.+)$/i)
-    if (headingMatch) {
-      heading = (headingMatch[1] ?? '').trim()
-      continue
-    }
-    const subheadingMatch = line.match(/^\s*subheader\s*:\s*(.+)$/i)
-    if (subheadingMatch) {
-      subheading = (subheadingMatch[1] ?? '').trim()
-    }
-  }
-
-  return { heading, subheading }
-}

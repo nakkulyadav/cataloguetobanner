@@ -38,6 +38,8 @@ function makeState(overrides: Partial<BannerState> = {}): BannerState {
     priceOverride: null,
     productImageSources: [],
     activeProductImageSourceId: null,
+    logoImageSources: [],
+    activeLogoImageSourceId: null,
     logoScale: 1,
     productImageScale: 1,
     quantityStickerText: null,

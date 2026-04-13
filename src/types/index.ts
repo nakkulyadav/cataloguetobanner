@@ -159,6 +159,8 @@ export interface DomainOption {
 
 export interface BackgroundOption {
   id: string;
+  /** Display name, e.g. "Standard Blue". Used in the gallery and for accessibility. */
+  name: string;
   url: string;
   ctaColor: string;
   ctaTextColor: string;
@@ -275,20 +277,16 @@ export interface SheetRow {
   team: string;
   /** Placement type, e.g. "Banner" — from the "Page Homepage/Food/Grocery etc" column */
   page: string;
+  /** Direct digihaat.in product URL from the "URL" column */
+  productUrl: string;
+  /** Price string from the "DIscounted Price" column, prefixed with ₹ (e.g. "₹85") */
+  price: string;
+  /** Banner heading text from the "Header" column */
+  heading: string;
+  /** Banner subheading text from the "Subheader" column */
+  subheading: string;
   /**
-   * Raw text from the "Offer callout" column.
-   * Contains both a human-readable price string AND a digihaat.in product URL
-   * on separate lines, e.g.:
-   *   "Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?..."
-   */
-  offerCallout: string;
-  /**
-   * Raw text from the "Comments" column.
-   * Contains "Header: ..." and "Subheader: ..." labels on separate lines.
-   */
-  comments: string;
-  /**
-   * Value from the optional "quantity sticker" column.
+   * Value from the optional "Quantity Sticker" column.
    * Empty string when the column is absent or the cell is blank.
    */
   quantitySticker: string;
@@ -329,6 +327,13 @@ export interface ScheduledBannerEntry {
   bgRemovalStatus: 'idle' | 'removing' | 'done' | 'error';
   /** Human-readable failure reason, set when bgRemovalStatus === 'error' */
   bgRemovalError: string | null;
+  /**
+   * Blob URL of the background-removed brand logo for this entry.
+   * null until logo bg-removal completes successfully.
+   */
+  bgRemovedLogoUrl: string | null;
+  /** Whether to display the bg-removed logo version (true) or the original (false). */
+  showBgRemovedLogo: boolean;
 }
 
 // --- Logging ---

@@ -5,6 +5,7 @@ import { useProviders } from '@/hooks/useProviders'
 import { useProviderProducts } from '@/hooks/useProviderProducts'
 import { useDirectLookup } from '@/hooks/useDirectLookup'
 import { useScheduledBanners } from '@/hooks/useScheduledBanners'
+import { useBackgrounds } from '@/hooks/useBackgrounds'
 import { exportBanner, generateFilename } from '@/services/exportService'
 import { removeBackground } from '@/services/removeBackgroundService'
 import type { ExportFormat } from '@/services/exportService'
@@ -29,8 +30,19 @@ function App() {
   // --- Top-level mode: banner builder vs. scheduled banners ---
   const [appMode, setAppMode] = useState<AppMode>('builder')
 
-  // Scheduled banners hook — manages sheet fetch + per-banner state
-  const scheduledBanners = useScheduledBanners()
+  // --- Backgrounds from Google Sheet ---
+  const { backgrounds, defaultBackground } = useBackgrounds()
+
+  // Scheduled banners hook — receives the default background so scheduled entries use it
+  const scheduledBanners = useScheduledBanners(defaultBackground)
+
+  // Set the default background once it loads (only if none is selected yet)
+  useEffect(() => {
+    if (defaultBackground && !selectedBackground) {
+      selectBackground(defaultBackground)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultBackground])
 
   // --- Provider selection state (two-step browse flow) ---
   const [selectedBpp, setSelectedBpp] = useState<string | null>(null)
@@ -64,6 +76,8 @@ function App() {
     subheadingText,
     productImageSources,
     activeProductImageSourceId,
+    logoImageSources,
+    activeLogoImageSourceId,
     selectProduct,
     selectBackground,
     setCtaText,
@@ -279,6 +293,8 @@ function App() {
       priceOverride,
       productImageSources,
       activeProductImageSourceId,
+      logoImageSources,
+      activeLogoImageSourceId,
       logoScale,
       productImageScale,
       quantityStickerText,
@@ -574,6 +590,7 @@ function App() {
             showTnc={showTnc}
             showBadge={showBadge}
             tncText={tncText}
+            backgrounds={backgrounds}
             selectedBackgroundId={selectedBackground?.id ?? null}
             productNameOverride={productNameOverride}
             originalProductName={selectedProduct?.name ?? null}

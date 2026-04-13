@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { BackgroundOption, ProductPrice, ImageSource } from '@/types'
-import { BACKGROUND_OPTIONS } from '@/constants/backgrounds'
 import BackgroundGallery from '@/components/BackgroundGallery/BackgroundGallery'
 import ImageUploadZone from '@/components/ImageUploadZone/ImageUploadZone'
 import BgVersionPill from '@/components/BgVersionPill/BgVersionPill'
@@ -15,6 +14,8 @@ interface BannerControlsProps {
   showTnc: boolean
   showBadge: boolean
   tncText: string
+  /** All available backgrounds fetched from the sheet (or static fallback). */
+  backgrounds: BackgroundOption[]
   selectedBackgroundId: string | null
   /** Current product name override (null = using original catalogue name) */
   productNameOverride: string | null
@@ -85,6 +86,7 @@ export default function BannerControls({
   showTnc,
   showBadge,
   tncText,
+  backgrounds,
   selectedBackgroundId,
   productNameOverride,
   originalProductName,
@@ -202,35 +204,35 @@ export default function BannerControls({
         )}
       </Section>
 
-      {/* Background Selector — inline 3-thumbnail strip */}
+      {/* Background Selector — button opens gallery popover */}
       <Section title="Background">
-        <div className="flex gap-2">
-          {BACKGROUND_OPTIONS.map((bg) => (
+        {(() => {
+          const selectedBg = backgrounds.find(b => b.id === selectedBackgroundId) ?? null
+          return (
             <button
-              key={bg.id}
-              onClick={() => onBackgroundSelect(bg)}
-              className={`flex-1 rounded-lg overflow-hidden aspect-[722/312] transition-interaction cursor-pointer ${
-                selectedBackgroundId === bg.id
-                  ? 'ring-2 ring-[var(--accent-base)] ring-offset-1 ring-offset-[var(--surface-1)]'
-                  : 'ring-1 ring-[var(--border-muted)] hover:ring-[var(--border-focus)]'
-              }`}
+              onClick={() => setGalleryOpen(true)}
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border-muted)] hover:border-[var(--border-focus)] transition-interaction cursor-pointer text-left"
             >
-              <img
-                src={bg.url}
-                alt="Background option"
-                className="w-full h-full object-cover"
-              />
+              {selectedBg ? (
+                <img
+                  src={selectedBg.url}
+                  alt={selectedBg.name}
+                  className="h-8 w-14 rounded object-cover flex-shrink-0"
+                />
+              ) : (
+                <div className="h-8 w-14 rounded bg-[var(--surface-3)] flex-shrink-0" />
+              )}
+              <span className="text-xs text-[var(--text-secondary)] truncate flex-1">
+                {selectedBg ? selectedBg.name : 'Select background...'}
+              </span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-[var(--text-tertiary)] flex-shrink-0">
+                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
-          ))}
-        </div>
-        <button
-          onClick={() => setGalleryOpen(true)}
-          className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] mt-1.5 cursor-pointer transition-interaction"
-        >
-          Browse all...
-        </button>
+          )
+        })()}
         <BackgroundGallery
-          backgrounds={BACKGROUND_OPTIONS}
+          backgrounds={backgrounds}
           selectedId={selectedBackgroundId}
           onSelect={onBackgroundSelect}
           isOpen={galleryOpen}

@@ -316,6 +316,8 @@ describe('useBannerState — loadState', () => {
       priceOverride: null,
       productImageSources: sources,
       activeProductImageSourceId: 'catalogue',
+      logoImageSources: [],
+      activeLogoImageSourceId: null,
       logoScale: 1.2,
       productImageScale: 0.8,
       quantityStickerText: null,
