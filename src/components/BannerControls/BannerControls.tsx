@@ -4,6 +4,8 @@ import BackgroundGallery from '@/components/BackgroundGallery/BackgroundGallery'
 import ImageUploadZone from '@/components/ImageUploadZone/ImageUploadZone'
 import BgVersionPill from '@/components/BgVersionPill/BgVersionPill'
 import ImageSourceList from '@/components/ImageSourceList/ImageSourceList'
+import { SUPPORTED_LANGUAGES } from '@/services/translationService'
+import type { LanguageCode } from '@/services/translationService'
 
 const CTA_PRESETS = ['SHOP NOW', 'BUY NOW', 'ORDER NOW']
 const BADGE_PRESETS = ['Free Delivery', 'New Arrival', 'Limited Offer']
@@ -78,6 +80,8 @@ interface BannerControlsProps {
   showBgRemovedLogo: boolean
   /** Called when the user clicks either segment of the logo version pill */
   onToggleBgRemovedLogo: () => void
+  onTranslateAll: (langCode: LanguageCode) => Promise<void>
+  isTranslating: boolean
 }
 
 export default function BannerControls({
@@ -131,11 +135,37 @@ export default function BannerControls({
   hasBgRemovedLogo,
   showBgRemovedLogo,
   onToggleBgRemovedLogo,
+  onTranslateAll,
+  isTranslating,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [selectedLang, setSelectedLang] = useState<LanguageCode>('hi')
 
   return (
     <div className="space-y-5 p-3">
+      {/* Translation */}
+      <Section title="Translate">
+        <div className="flex gap-2 mt-1">
+          <select
+            value={selectedLang}
+            onChange={(e) => setSelectedLang(e.target.value as LanguageCode)}
+            disabled={isTranslating}
+            className="flex-1 input-base text-xs py-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {SUPPORTED_LANGUAGES.map(lang => (
+              <option key={lang.code} value={lang.code}>{lang.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => void onTranslateAll(selectedLang)}
+            disabled={isTranslating}
+            className="px-3 py-1.5 rounded-md text-xs font-semibold bg-[var(--accent-base)] text-white hover:opacity-90 transition-interaction cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            {isTranslating ? 'Translating...' : 'Translate All'}
+          </button>
+        </div>
+      </Section>
+
       {/* Brand Logo — toggle + upload zone + zoom slider + bg-version pill (IT-12) */}
       <Section title="Brand Logo">
         <TogglePill checked={showLogo} onToggle={onLogoToggle} />

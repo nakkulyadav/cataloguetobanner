@@ -8,7 +8,9 @@ import { useScheduledBanners } from '@/hooks/useScheduledBanners'
 import { useBackgrounds } from '@/hooks/useBackgrounds'
 import { exportBanner, generateFilename } from '@/services/exportService'
 import { removeBackground } from '@/services/removeBackgroundService'
+import { translateFields, SUPPORTED_LANGUAGES } from '@/services/translationService'
 import type { ExportFormat } from '@/services/exportService'
+import type { LanguageCode } from '@/services/translationService'
 import type { BannerState, ApiProvider, ProductGroup, ParsedProduct, ScheduledBannerEntry } from '@/types'
 import BannerPreview from '@/components/BannerPreview/BannerPreview'
 import ProductSearch from '@/components/ProductSearch/ProductSearch'
@@ -26,6 +28,11 @@ type AppMode = 'builder' | 'scheduled'
 function App() {
   const bannerRef = useRef<HTMLDivElement>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isTranslating, setIsTranslating] = useState(false)
+  // Per-field English source captured at translation time.
+  // On re-translate, these are used instead of the (possibly translated) field values
+  // so we always translate from English. Cleared per-field when the user manually edits.
+  const [englishSources, setEnglishSources] = useState<import('@/services/translationService').TranslatableFields>({})
 
   // --- Top-level mode: banner builder vs. scheduled banners ---
   const [appMode, setAppMode] = useState<AppMode>('builder')
@@ -194,6 +201,7 @@ function App() {
     if (bgRemovedLogoUrl) URL.revokeObjectURL(bgRemovedLogoUrl)
     setBgRemovedLogoUrl(null)
     setShowBgRemovedLogo(false)
+    setEnglishSources({})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id])
 
@@ -392,6 +400,83 @@ function App() {
     },
     [selectedProduct, addLog],
   )
+
+  // Wrappers for manual field edits — clear the stored English source for that field
+  // so the next translation uses the new manually-entered value as the source.
+  const handleProductNameChange = useCallback((name: string | null) => {
+    setProductNameOverride(name)
+    setEnglishSources(prev => ({ ...prev, productName: undefined }))
+  }, [setProductNameOverride])
+
+  const handleSubheadingChange = useCallback((text: string) => {
+    setSubheadingText(text)
+    setEnglishSources(prev => ({ ...prev, subheading: undefined }))
+  }, [setSubheadingText])
+
+  const handleCtaChange = useCallback((text: string) => {
+    setCtaText(text)
+    setEnglishSources(prev => ({ ...prev, cta: undefined }))
+  }, [setCtaText])
+
+  const handleBadgeChange = useCallback((text: string) => {
+    setBadgeText(text)
+    setEnglishSources(prev => ({ ...prev, badge: undefined }))
+  }, [setBadgeText])
+
+  const handleTranslateAll = useCallback(async (langCode: LanguageCode) => {
+    // Resolve source for each field: stored English source takes priority over current value
+    // so we always translate from English, never from a previous translation.
+    const sources = {
+      productName: englishSources.productName ?? (productNameOverride ?? selectedProduct?.name) ?? undefined,
+      subheading: englishSources.subheading ?? subheadingText ?? undefined,
+      cta: englishSources.cta ?? ctaText ?? undefined,
+      badge: englishSources.badge ?? badgeText ?? undefined,
+    }
+
+    if (langCode === 'en') {
+      // Restore to English from stored sources (no API call needed)
+      if (sources.productName) setProductNameOverride(sources.productName)
+      if (sources.subheading) setSubheadingText(sources.subheading)
+      if (sources.cta) setCtaText(sources.cta)
+      if (sources.badge) setBadgeText(sources.badge)
+      setEnglishSources({})
+      addLog('info', 'Restored fields to English')
+      return
+    }
+
+    setIsTranslating(true)
+    try {
+      // Persist these as the English sources before translating
+      setEnglishSources(sources)
+
+      const { results, errors } = await translateFields(sources, langCode)
+
+      if (results.productName !== undefined) setProductNameOverride(results.productName)
+      if (results.subheading !== undefined) setSubheadingText(results.subheading)
+      if (results.cta !== undefined) setCtaText(results.cta)
+      if (results.badge !== undefined) setBadgeText(results.badge)
+
+      const successCount = Object.keys(results).length
+      const langLabel = SUPPORTED_LANGUAGES.find(l => l.code === langCode)?.label ?? langCode
+      if (successCount > 0) {
+        addLog('info', `Translated ${successCount} field${successCount > 1 ? 's' : ''} to ${langLabel}`)
+      }
+      for (const error of errors) {
+        addLog('error', `Translation failed — ${error}`)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      addLog('error', `Translation failed: ${msg}`)
+    } finally {
+      setIsTranslating(false)
+    }
+  }, [
+    englishSources,
+    productNameOverride, selectedProduct,
+    subheadingText, ctaText, badgeText,
+    setProductNameOverride, setSubheadingText, setCtaText, setBadgeText,
+    addLog,
+  ])
 
   /**
    * Whether to show the product list (direct lookup provider result or browse-mode provider).
@@ -594,20 +679,20 @@ function App() {
             selectedBackgroundId={selectedBackground?.id ?? null}
             productNameOverride={productNameOverride}
             originalProductName={selectedProduct?.name ?? null}
-            onCtaChange={setCtaText}
-            onBadgeChange={setBadgeText}
+            onCtaChange={handleCtaChange}
+            onBadgeChange={handleBadgeChange}
             onTncToggle={toggleTnc}
             onBadgeToggle={toggleBadge}
             onTncTextChange={setTncText}
             onBackgroundSelect={selectBackground}
-            onProductNameChange={setProductNameOverride}
+            onProductNameChange={handleProductNameChange}
             showPrice={showPrice}
             onPriceToggle={togglePrice}
             priceOverride={priceOverride}
             originalPrice={selectedProduct?.price}
             onPriceOverrideChange={setPriceOverride}
             subheadingText={subheadingText}
-            onSubheadingTextChange={setSubheadingText}
+            onSubheadingTextChange={handleSubheadingChange}
             showSubheading={showSubheading}
             onSubheadingToggle={toggleSubheading}
             showLogo={showLogo}
@@ -649,6 +734,8 @@ function App() {
             onQuantityStickerToggle={toggleQuantitySticker}
             quantityStickerText={quantityStickerText}
             onQuantityStickerTextChange={setQuantityStickerText}
+            onTranslateAll={handleTranslateAll}
+            isTranslating={isTranslating}
             />
             </div>
           </>
