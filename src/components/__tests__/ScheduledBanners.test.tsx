@@ -64,6 +64,7 @@ function makeBannerState(overrides: Partial<BannerState> = {}): BannerState {
     activeProductImageSourceId: null,
     logoImageSources: [],
     activeLogoImageSourceId: null,
+    showOriginalLogo: false,
     logoScale: 1,
     productImageScale: 1,
     quantityStickerText: null,
@@ -77,13 +78,11 @@ function makeEntry(overrides: Partial<ScheduledBannerEntry> = {}): ScheduledBann
     id: 'entry-1',
     sheetRow: {
       date: '3/30/2026',
-      team: 'bazar page',
-      page: 'Banner',
+      offer: 'Free delivery',
       productUrl: 'https://digihaat.in/en/product?item_id=abc',
       price: '₹85',
       heading: 'Juicy Mangoes',
       subheading: 'Starting at ₹85',
-      quantitySticker: '',
     },
     status: 'ready',
     bannerState: makeBannerState(),
@@ -92,6 +91,10 @@ function makeEntry(overrides: Partial<ScheduledBannerEntry> = {}): ScheduledBann
     bgRemovalError: null,
     bgRemovedLogoUrl: null,
     showBgRemovedLogo: true,
+    aiGenStatus: 'idle',
+    aiGenError: null,
+    enhanceStatus: 'idle',
+    enhanceStep: '',
     ...overrides,
   }
 }
@@ -186,7 +189,7 @@ describe('ScheduledBannerCard', () => {
   it('renders BannerPreview and Export button when status is ready', () => {
     render(<ScheduledBannerCard entry={makeEntry()} />)
     expect(screen.getByTestId('banner-preview')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /export banner/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /export to cms/i })).toBeInTheDocument()
   })
 
   it('renders product name label for a ready entry', () => {
@@ -202,13 +205,11 @@ describe('ScheduledBannerCard', () => {
       error: 'No product URL found in Offer callout',
       sheetRow: {
         date: '3/30/2026',
-        team: 'bazar page',
-        page: 'Banner',
+        offer: 'Free delivery',
         productUrl: longCallout,
         price: '',
         heading: '',
         subheading: '',
-        quantitySticker: '',
       },
     })
     render(<ScheduledBannerCard entry={entry} />)
@@ -244,6 +245,108 @@ describe('ScheduledBannerCard', () => {
     render(<ScheduledBannerCard entry={makeEntry()} isEditing={false} onEdit={onEdit} onSave={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }))
     expect(onEdit).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AIG-11: Generate AI button + AiGenBadge
+// ---------------------------------------------------------------------------
+
+describe('ScheduledBannerCard — Generate AI button (AIG-11)', () => {
+  it('renders Generate AI button when onGenerateAiImages is provided and entry is ready', () => {
+    render(<ScheduledBannerCard entry={makeEntry()} onGenerateAiImages={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /generate ai/i })).toBeInTheDocument()
+  })
+
+  it('does not render Generate AI button when onGenerateAiImages is not provided', () => {
+    render(<ScheduledBannerCard entry={makeEntry()} />)
+    expect(screen.queryByRole('button', { name: /generate ai/i })).not.toBeInTheDocument()
+  })
+
+  it('calls onGenerateAiImages when button is clicked', () => {
+    const onGenerateAiImages = vi.fn()
+    render(<ScheduledBannerCard entry={makeEntry()} onGenerateAiImages={onGenerateAiImages} />)
+    fireEvent.click(screen.getByRole('button', { name: /generate ai/i }))
+    expect(onGenerateAiImages).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables button when isGeneratingAiImages is true', () => {
+    render(
+      <ScheduledBannerCard
+        entry={makeEntry()}
+        onGenerateAiImages={vi.fn()}
+        isGeneratingAiImages={true}
+      />
+    )
+    expect(screen.getByRole('button', { name: /generate ai/i })).toBeDisabled()
+  })
+
+  it('disables button when entry.aiGenStatus is generating', () => {
+    render(
+      <ScheduledBannerCard
+        entry={makeEntry({ aiGenStatus: 'generating' })}
+        onGenerateAiImages={vi.fn()}
+        isGeneratingAiImages={false}
+      />
+    )
+    expect(screen.getByRole('button', { name: /generate ai/i })).toBeDisabled()
+  })
+
+  it('button is enabled when not generating', () => {
+    render(
+      <ScheduledBannerCard
+        entry={makeEntry({ aiGenStatus: 'idle' })}
+        onGenerateAiImages={vi.fn()}
+        isGeneratingAiImages={false}
+      />
+    )
+    expect(screen.getByRole('button', { name: /generate ai/i })).not.toBeDisabled()
+  })
+})
+
+describe('ScheduledBannerCard — AiGenBadge (AIG-11)', () => {
+  it('renders nothing for aiGenStatus idle', () => {
+    const { container } = render(
+      <ScheduledBannerCard entry={makeEntry({ aiGenStatus: 'idle' })} onGenerateAiImages={vi.fn()} />
+    )
+    expect(container.querySelector('[class*="animate-spin"]')).not.toBeInTheDocument()
+    expect(screen.queryByText(/generating/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/ai done/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/ai failed/i)).not.toBeInTheDocument()
+  })
+
+  it('renders spinner and "Generating…" for aiGenStatus generating', () => {
+    render(
+      <ScheduledBannerCard entry={makeEntry({ aiGenStatus: 'generating' })} onGenerateAiImages={vi.fn()} />
+    )
+    expect(screen.getByText(/generating/i)).toBeInTheDocument()
+  })
+
+  it('renders checkmark and "AI done" for aiGenStatus done', () => {
+    render(
+      <ScheduledBannerCard entry={makeEntry({ aiGenStatus: 'done' })} onGenerateAiImages={vi.fn()} />
+    )
+    expect(screen.getByText(/ai done/i)).toBeInTheDocument()
+  })
+
+  it('renders X mark and "AI failed" for aiGenStatus error', () => {
+    render(
+      <ScheduledBannerCard
+        entry={makeEntry({ aiGenStatus: 'error', aiGenError: 'Network timeout' })}
+        onGenerateAiImages={vi.fn()}
+      />
+    )
+    expect(screen.getByText(/ai failed/i)).toBeInTheDocument()
+  })
+
+  it('AI failed badge has title set to error message', () => {
+    render(
+      <ScheduledBannerCard
+        entry={makeEntry({ aiGenStatus: 'error', aiGenError: 'Network timeout' })}
+        onGenerateAiImages={vi.fn()}
+      />
+    )
+    expect(screen.getByText(/ai failed/i)).toHaveAttribute('title', 'Network timeout')
   })
 })
 

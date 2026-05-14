@@ -13,25 +13,15 @@ const SHEET_ID = '1xwxI8wGPpvSMzKgQI3AE-YCGEdP1FKV5TrNm-ay-hWA'
  */
 const BACKGROUNDS_SHEET_ID = '1ADxwPbHOcT9u2r-Higpi7v_TIrvEzbkv8VRuRKAv19A'
 
-/**
- * Google Visualization query endpoint.
- * Returns JSONP-wrapped JSON for publicly shared sheets — no API key required,
- * and Google sets proper CORS headers for public access.
- */
-const GVIZ_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`
-
 // ---------------------------------------------------------------------------
 // Column name constants — match the exact header text in the sheet
 // ---------------------------------------------------------------------------
 const COL_DATE = 'Date'
-const COL_TEAM = 'Team'
-const COL_PAGE = 'Page'
+const COL_OFFER = 'Offer'
 const COL_URL = 'URL'
-const COL_DISCOUNTED_PRICE = 'DIscounted Price'
+const COL_DISCOUNTED_PRICE = 'Discounted Price'
 const COL_HEADER = 'Header'
 const COL_SUBHEADER = 'Subheader'
-/** Optional — column may not exist in all sheet versions. */
-const COL_QUANTITY_STICKER = 'Quantity Sticker'
 
 // ---------------------------------------------------------------------------
 // Types for the raw gviz/tq JSON payload
@@ -93,19 +83,15 @@ function driveShareToImageUrl(url: string): string {
 export async function fetchBackgroundOptions(
   signal?: AbortSignal,
 ): Promise<{ backgrounds: BackgroundOption[]; defaultId: string | null }> {
-  const url = `https://docs.google.com/spreadsheets/d/${BACKGROUNDS_SHEET_ID}/gviz/tq?tqx=out:json`
-  const response = await fetch(url, { signal })
+  const response = await fetch(`/api/sheets?sheetId=${BACKGROUNDS_SHEET_ID}`, { signal })
 
   if (!response.ok) {
     throw new Error(`Failed to fetch backgrounds sheet: HTTP ${response.status}`)
   }
 
-  const rawText = await response.text()
-  const jsonText = stripJsonpWrapper(rawText)
-
   let parsed: GvizResponse
   try {
-    parsed = JSON.parse(jsonText) as GvizResponse
+    parsed = (await response.json()) as GvizResponse
   } catch {
     throw new Error('Failed to parse backgrounds sheet response as JSON')
   }
@@ -159,40 +145,22 @@ export async function fetchBackgroundOptions(
 // ---------------------------------------------------------------------------
 
 /**
- * Strips the JSONP wrapper that Google wraps around gviz/tq responses.
- *
- * Google returns:  `/*O_o*‌/\ngoogle.visualization.Query.setResponse({...});`
- * We need only the JSON object inside the outermost parentheses.
- */
-function stripJsonpWrapper(raw: string): string {
-  const start = raw.indexOf('(')
-  const end = raw.lastIndexOf(')')
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error('Unexpected gviz/tq response format — could not find JSONP wrapper')
-  }
-  return raw.slice(start + 1, end)
-}
-
-/**
  * Fetches the promotions Google Sheet and parses every row into a `SheetRow`.
  *
  * @param signal  Optional AbortSignal for request cancellation.
  * @returns       Array of all sheet rows (unfiltered).
- * @throws        On network error, unexpected response shape, or JSONP parse failure.
+ * @throws        On network error, unexpected response shape, or parse failure.
  */
 export async function fetchSheetRows(signal?: AbortSignal): Promise<SheetRow[]> {
-  const response = await fetch(GVIZ_URL, { signal })
+  const response = await fetch(`/api/sheets?sheetId=${SHEET_ID}`, { signal })
 
   if (!response.ok) {
     throw new Error(`Failed to fetch promotions sheet: HTTP ${response.status}`)
   }
 
-  const rawText = await response.text()
-  const jsonText = stripJsonpWrapper(rawText)
-
   let parsed: GvizResponse
   try {
-    parsed = JSON.parse(jsonText) as GvizResponse
+    parsed = (await response.json()) as GvizResponse
   } catch {
     throw new Error('Failed to parse promotions sheet response as JSON')
   }
@@ -207,7 +175,7 @@ export async function fetchSheetRows(signal?: AbortSignal): Promise<SheetRow[]> 
   })
 
   // Verify required columns are present
-  const required = [COL_DATE, COL_TEAM, COL_PAGE, COL_URL, COL_DISCOUNTED_PRICE, COL_HEADER, COL_SUBHEADER]
+  const required = [COL_DATE, COL_OFFER, COL_URL, COL_DISCOUNTED_PRICE, COL_HEADER, COL_SUBHEADER]
   const missing = required.filter(name => colIndex[name.toLowerCase()] === undefined)
   if (missing.length > 0) {
     const available = cols.map(c => `"${c.label}"`).join(', ')
@@ -229,47 +197,26 @@ export async function fetchSheetRows(signal?: AbortSignal): Promise<SheetRow[]> 
 
     return {
       date: cell(COL_DATE),
-      team: cell(COL_TEAM),
-      page: cell(COL_PAGE),
+      offer: cell(COL_OFFER).trim(),
       productUrl: cell(COL_URL).trim(),
       price,
       heading: cell(COL_HEADER).trim(),
       subheading: cell(COL_SUBHEADER).trim(),
-      quantitySticker: colIndex[COL_QUANTITY_STICKER.toLowerCase()] !== undefined
-        ? cell(COL_QUANTITY_STICKER).trim()
-        : '',
     }
   })
 }
 
 // ---------------------------------------------------------------------------
-// SB-3: filterRowsForDate — filter by date, team=bazaar, page=Banner
+// SB-3: filterRowsForDate — filter rows matching the target date
 // ---------------------------------------------------------------------------
 
 /**
- * Filters sheet rows to those matching the given date for the Bazaar team's banners.
- *
- * Criteria:
- *  - `date` column equals `targetDate` (exact string match, e.g. "3/30/2026")
- *  - `team` column equals "bazar page" (case-insensitive)
- *  - `page` column equals "Banner" (case-insensitive)
- *
- * Note: The gviz/tq API formats dates as M/D/YYYY (no leading zeros), so
- * we normalise the caller's date string the same way before comparing.
+ * Filters sheet rows to those whose date matches `targetDate`.
+ * Both sides are normalised to M/D/YYYY (no leading zeros) before comparing.
  */
 export function filterRowsForDate(rows: SheetRow[], targetDate: string): SheetRow[] {
-  // Normalise the target date: strip leading zeros from month and day.
-  // The sheet stores "3/30/2026" not "03/30/2026".
   const normalised = normaliseDateString(targetDate)
-
-  const allowedPages = ['banner', 'supermall']
-
-  return rows.filter(
-    row =>
-      normaliseDateString(row.date) === normalised &&
-      row.team.trim().toLowerCase() === 'bazar page' &&
-      allowedPages.includes(row.page.trim().toLowerCase()),
-  )
+  return rows.filter(row => normaliseDateString(row.date) === normalised)
 }
 
 /**

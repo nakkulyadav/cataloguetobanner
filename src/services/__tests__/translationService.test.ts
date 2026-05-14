@@ -47,7 +47,7 @@ describe('translateText', () => {
   it('calls MyMemory API with correct URL', async () => {
     await translateText('Buy Now', 'hi')
     const calledUrl = ((fetch as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[])[0] as string
-    expect(calledUrl).toContain('api.mymemoryapi.com/get')
+    expect(calledUrl).toContain('api.mymemory.translated.net/get')
     expect(calledUrl).toContain('langpair=en|hi')
     expect(calledUrl).toContain(encodeURIComponent('Buy Now'))
   })

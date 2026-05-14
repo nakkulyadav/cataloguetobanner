@@ -26,6 +26,12 @@ interface ScheduledBannersGridProps {
   onRemoveBgEntry: (id: string) => void
   /** True while any bg removal is in progress */
   isRemovingBg: boolean
+  /** Called when the user clicks Generate AI on a card */
+  onGenerateAiImages?: (id: string) => void
+  /** Called when the user clicks the Reset entry icon on a card */
+  onResetEntry?: (id: string) => void
+  /** Called when the user clicks the Enhance button on a card */
+  onEnhanceEntry?: (id: string) => void
 }
 
 /**
@@ -47,6 +53,9 @@ export default function ScheduledBannersGrid({
   editingBannerState,
   onRemoveBgEntry,
   isRemovingBg,
+  onGenerateAiImages,
+  onResetEntry,
+  onEnhanceEntry,
 }: ScheduledBannersGridProps) {
   return (
     <div className="flex flex-col h-full">
@@ -116,6 +125,12 @@ export default function ScheduledBannersGrid({
                 onSave={onSaveEntry ? () => onSaveEntry(entry.id) : undefined}
                 onRemoveBg={entry.status === 'ready' ? () => onRemoveBgEntry(entry.id) : undefined}
                 isRemovingBg={isRemovingBg}
+                onGenerateAiImages={entry.status === 'ready' ? () => onGenerateAiImages?.(entry.id) : undefined}
+                isGeneratingAiImages={entry.aiGenStatus === 'generating'}
+                onResetEntry={entry.status === 'ready' ? () => onResetEntry?.(entry.id) : undefined}
+                onEnhance={entry.status === 'ready' ? () => onEnhanceEntry?.(entry.id) : undefined}
+                enhanceJobStatus={entry.enhanceStatus}
+                enhanceJobStep={entry.enhanceStep}
               />
             ))}
           </div>

@@ -67,6 +67,8 @@ interface BannerControlsProps {
   onRemoveProductImageSource: (id: string) => void
   onSelectProductImageSource: (id: string) => void
   onToggleSourceBgRemoved: (id: string) => void
+  /** Called when the user clicks the Enhanced/Original toggle for a product image source. */
+  onToggleShowOriginal: (id: string) => void
   showQuantitySticker: boolean
   onQuantityStickerToggle: () => void
   quantityStickerText: string | null
@@ -80,8 +82,14 @@ interface BannerControlsProps {
   showBgRemovedLogo: boolean
   /** Called when the user clicks either segment of the logo version pill */
   onToggleBgRemovedLogo: () => void
-  onTranslateAll: (langCode: LanguageCode) => Promise<void>
-  isTranslating: boolean
+  /** Whether the original (pre-enhancement) logo is displayed instead of the processed version */
+  showOriginalLogo: boolean
+  /** Called when the user clicks the Enhanced/Original logo toggle. Only rendered when hasBgRemovedLogo is true. */
+  onToggleShowOriginalLogo: () => void
+  onTranslateAll?: (langCode: LanguageCode) => Promise<void>
+  isTranslating?: boolean
+  /** Called when the user clicks "Reset to default" to clear saved overrides */
+  onResetToDefault?: () => void
 }
 
 export default function BannerControls({
@@ -128,6 +136,7 @@ export default function BannerControls({
   onRemoveProductImageSource,
   onSelectProductImageSource,
   onToggleSourceBgRemoved,
+  onToggleShowOriginal,
   showQuantitySticker,
   onQuantityStickerToggle,
   quantityStickerText,
@@ -135,8 +144,11 @@ export default function BannerControls({
   hasBgRemovedLogo,
   showBgRemovedLogo,
   onToggleBgRemovedLogo,
+  showOriginalLogo,
+  onToggleShowOriginalLogo,
   onTranslateAll,
   isTranslating,
+  onResetToDefault,
 }: BannerControlsProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [selectedLang, setSelectedLang] = useState<LanguageCode>('hi')
@@ -157,7 +169,7 @@ export default function BannerControls({
             ))}
           </select>
           <button
-            onClick={() => void onTranslateAll(selectedLang)}
+            onClick={() => void onTranslateAll?.(selectedLang)}
             disabled={isTranslating}
             className="px-3 py-1.5 rounded-md text-xs font-semibold bg-[var(--accent-base)] text-white hover:opacity-90 transition-interaction cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
           >
@@ -186,6 +198,15 @@ export default function BannerControls({
               <BgVersionPill
                 showBgRemoved={showBgRemovedLogo}
                 onToggle={onToggleBgRemovedLogo}
+              />
+            )}
+            {/* ER-12: show Original/Enhanced toggle when logo was processed */}
+            {hasBgRemovedLogo && (
+              <BgVersionPill
+                showBgRemoved={showOriginalLogo}
+                onToggle={onToggleShowOriginalLogo}
+                labelA="Enhanced"
+                labelB="Original"
               />
             )}
           </div>
@@ -390,6 +411,7 @@ export default function BannerControls({
               onSelect={onSelectProductImageSource}
               onRemove={onRemoveProductImageSource}
               onToggleBgRemoved={onToggleSourceBgRemoved}
+            onToggleShowOriginal={onToggleShowOriginal}
             />
           )}
           <ImageUploadZone
@@ -418,6 +440,20 @@ export default function BannerControls({
           />
         )}
       </Section>
+
+      {/* Reset to default — clears all saved overrides for the current product */}
+      {onResetToDefault && (
+        <div className="pt-2 border-t border-[var(--border-subtle)]">
+          <button
+            type="button"
+            onClick={onResetToDefault}
+            title="Clears saved overrides — re-select the product to restore defaults"
+            className="text-xs text-red-400 hover:text-red-300 transition-interaction cursor-pointer"
+          >
+            Reset to default
+          </button>
+        </div>
+      )}
 
     </div>
   )

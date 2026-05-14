@@ -1,0 +1,15 @@
+# Cloudflare Pages + Workers configuration.
+# Pages Functions in functions/ are auto-deployed alongside the Vite build.
+# R2 bucket holds cached processed images (bg-removed + AI-generated).
+# Secrets (HF_TOKEN) are set via `wrangler secret put` or the CF dashboard.
+
+name = "digihaat-banner"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "digihaat-banner-images"
+
+[ai]
+binding = "AI"

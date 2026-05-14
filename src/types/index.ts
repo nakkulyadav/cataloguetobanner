@@ -186,6 +186,13 @@ export interface ImageSource {
    * For 'user' sources this is a blob: URL created from the uploaded file.
    */
   originalUrl: string;
+  /**
+   * Same-origin URL of the Real-ESRGAN enhanced version. null until enhancement
+   * completes. When present, bg removal runs against this URL instead of originalUrl.
+   */
+  enhancedUrl: string | null;
+  /** Lifecycle of the Real-ESRGAN enhancement call for this image. */
+  enhancementStatus: 'idle' | 'enhancing' | 'done' | 'error';
   /** Blob URL of the background-removed version. null until processing completes. */
   bgRemovedUrl: string | null;
   /** Lifecycle of the background-removal worker for this image. */
@@ -196,8 +203,16 @@ export interface ImageSource {
    * immediately visible.
    */
   showBgRemoved: boolean;
+  /**
+   * When true, the preview always renders `originalUrl` regardless of whether
+   * `enhancedUrl` or `bgRemovedUrl` are present.  Acts as an explicit "revert"
+   * so the user can compare the untouched source against the processed result.
+   * Reset to false automatically when the enhance pipeline runs successfully
+   * so the new result is visible straight away.
+   */
+  showOriginal: boolean;
   /** Origin — 'catalogue' sources cannot be removed from the list by the user. */
-  source: 'catalogue' | 'user';
+  source: 'catalogue' | 'user' | 'ai';
 }
 
 // --- Banner state ---
@@ -262,6 +277,12 @@ export interface BannerState {
   quantityStickerText: string | null;
   /** Whether the quantity sticker pill is visible on the banner. */
   showQuantitySticker: boolean;
+  /**
+   * When true, the preview renders the original (pre-enhancement) brand logo
+   * regardless of whether a bg-removed logo is available.
+   * Mirror of `ImageSource.showOriginal` but scoped to the logo slot.
+   */
+  showOriginalLogo: boolean;
 }
 
 // --- Scheduled Banners (Google Sheets integration) ---
@@ -273,23 +294,16 @@ export interface BannerState {
 export interface SheetRow {
   /** MM/DD/YYYY — the promotion date from the "Date" column */
   date: string;
-  /** Originating team, e.g. "bazaar" — from the "Team" column */
-  team: string;
-  /** Placement type, e.g. "Banner" — from the "Page Homepage/Food/Grocery etc" column */
-  page: string;
+  /** Offer text, e.g. "Free delivery" — from the "Offer" column */
+  offer: string;
   /** Direct digihaat.in product URL from the "URL" column */
   productUrl: string;
-  /** Price string from the "DIscounted Price" column, prefixed with ₹ (e.g. "₹85") */
+  /** Price string from the "Discounted Price" column, prefixed with ₹ (e.g. "₹85") */
   price: string;
   /** Banner heading text from the "Header" column */
   heading: string;
   /** Banner subheading text from the "Subheader" column */
   subheading: string;
-  /**
-   * Value from the optional "Quantity Sticker" column.
-   * Empty string when the column is absent or the cell is blank.
-   */
-  quantitySticker: string;
 }
 
 /**
@@ -334,6 +348,37 @@ export interface ScheduledBannerEntry {
   bgRemovedLogoUrl: string | null;
   /** Whether to display the bg-removed logo version (true) or the original (false). */
   showBgRemovedLogo: boolean;
+  /** Lifecycle of AI image generation for this entry. */
+  aiGenStatus: 'idle' | 'generating' | 'done' | 'error';
+  /** Human-readable failure reason, set when aiGenStatus === 'error' */
+  aiGenError: string | null;
+  /** Lifecycle of the manual enhance + bg-removal pipeline for this entry. */
+  enhanceStatus: 'idle' | 'running' | 'done' | 'error';
+  /** Current step label shown while enhanceStatus === 'running'. */
+  enhanceStep: string;
+}
+
+// --- Persistence ---
+
+/**
+ * The subset of ScheduledBannerEntry fields that are worth persisting to IndexedDB.
+ * Excludes transient lifecycle fields (status, bgRemovalStatus, aiGenStatus) which
+ * are normalised to their idle states on restore; those are stored separately so
+ * the deserialiser can normalise 'removing' / 'generating' → 'idle'.
+ */
+export interface PersistedScheduledEntry {
+  /** Fully assembled banner state, or null if the entry errored before resolving. */
+  bannerState: BannerState | null
+  /** Stable URL of the background-removed brand logo (data URL or /api/images/…). */
+  bgRemovedLogoUrl: string | null
+  /** Whether to display the bg-removed logo version. */
+  showBgRemovedLogo: boolean
+  /** Lifecycle status — normalised to 'idle' on restore if stuck at 'removing'. */
+  bgRemovalStatus: 'idle' | 'removing' | 'done' | 'error'
+  /** Lifecycle status — normalised to 'idle' on restore if stuck at 'generating'. */
+  aiGenStatus: 'idle' | 'generating' | 'done' | 'error'
+  /** Lifecycle status — normalised to 'idle' on restore if stuck at 'running'. */
+  enhanceStatus: 'idle' | 'running' | 'done' | 'error'
 }
 
 // --- Logging ---
@@ -345,4 +390,10 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: Date;
+}
+
+/** Shared response shape returned by /api/generate-image and /api/remove-background Workers. */
+export interface ProcessedImageResponse {
+  url: string;
+  cached: boolean;
 }

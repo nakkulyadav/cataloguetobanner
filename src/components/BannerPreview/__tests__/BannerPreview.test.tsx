@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import BannerPreview from '@/components/BannerPreview/BannerPreview'
 import {
   IMAGE_LEFT_BARRIER,
@@ -44,6 +44,7 @@ function makeState(overrides: Partial<BannerState> = {}): BannerState {
     productImageScale: 1,
     quantityStickerText: null,
     showQuantitySticker: false,
+    showOriginalLogo: false,
     ...overrides,
   }
 }
@@ -68,10 +69,13 @@ describe('BannerPreview — product image left-edge clamping (IC)', () => {
         id: 'user-1',
         label: 'Upload 1',
         originalUrl: 'https://example.com/product.png',
+        enhancedUrl: null,
+        enhancementStatus: 'idle' as const,
         bgRemovedUrl: null,
-        bgRemovalStatus: 'idle',
+        bgRemovalStatus: 'idle' as const,
         showBgRemoved: false,
-        source: 'user',
+        showOriginal: false,
+        source: 'user' as const,
       }],
       activeProductImageSourceId: 'user-1',
       productImageScale,
@@ -257,5 +261,163 @@ describe('BannerPreview — layout gap compression (GC)', () => {
     const logoEl = container.querySelector('img[src="https://example.com/logo.png"]') as HTMLImageElement
     const logoTop = parseFloat(logoEl.style.top)
     expect(logoTop).toBeGreaterThanOrEqual(LOGO_MIN_TOP_PADDING)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Enhance button + overlay (OE-13)
+// ---------------------------------------------------------------------------
+
+describe('BannerPreview — Enhance button and overlay (OE-13)', () => {
+  it('idle: "Enhance" button is visible and enabled', () => {
+    render(<BannerPreview state={makeState()} enhanceJobStatus="idle" onEnhance={vi.fn()} />)
+    const btn = screen.getByRole('button', { name: 'Enhance' })
+    expect(btn).toBeInTheDocument()
+    expect(btn).not.toBeDisabled()
+  })
+
+  it('idle: clicking the button calls onEnhance', async () => {
+    const onEnhance = vi.fn()
+    render(<BannerPreview state={makeState()} enhanceJobStatus="idle" onEnhance={onEnhance} />)
+    screen.getByRole('button', { name: 'Enhance' }).click()
+    expect(onEnhance).toHaveBeenCalledTimes(1)
+  })
+
+  it('running: button is disabled and shows step text', () => {
+    render(
+      <BannerPreview
+        state={makeState()}
+        enhanceJobStatus="running"
+        enhanceJobStep="Enhancing product image..."
+        onEnhance={vi.fn()}
+      />,
+    )
+    const btn = screen.getByRole('button', { name: 'Enhancing product image...' })
+    expect(btn).toBeDisabled()
+  })
+
+  it('running: overlay is rendered over the banner with the step label', () => {
+    const { container } = render(
+      <BannerPreview
+        state={makeState()}
+        enhanceJobStatus="running"
+        enhanceJobStep="Removing background..."
+        onEnhance={vi.fn()}
+      />,
+    )
+    // Step text appears in both the overlay span and the button — query the overlay directly
+    const overlay = container.querySelector('[style*="pointer-events: none"]') as HTMLElement
+    expect(overlay).toBeInTheDocument()
+    expect(overlay.textContent).toContain('Removing background...')
+  })
+
+  it('running: overlay is absent when enhanceJobStatus is not running', () => {
+    const { container } = render(
+      <BannerPreview state={makeState()} enhanceJobStatus="idle" onEnhance={vi.fn()} />,
+    )
+    const overlay = container.querySelector('[style*="pointer-events: none"]')
+    expect(overlay).not.toBeInTheDocument()
+  })
+
+  it('done: Enhance button is absent from the DOM', () => {
+    render(<BannerPreview state={makeState()} enhanceJobStatus="done" onEnhance={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /enhance/i })).not.toBeInTheDocument()
+  })
+
+  it('error: "Retry Enhance" button is visible and enabled', () => {
+    render(<BannerPreview state={makeState()} enhanceJobStatus="error" onEnhance={vi.fn()} />)
+    const btn = screen.getByRole('button', { name: 'Retry Enhance' })
+    expect(btn).toBeInTheDocument()
+    expect(btn).not.toBeDisabled()
+  })
+
+  it('error: error note is displayed below the button', () => {
+    render(<BannerPreview state={makeState()} enhanceJobStatus="error" onEnhance={vi.fn()} />)
+    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ER-14: showOriginal URL resolution
+// ---------------------------------------------------------------------------
+
+describe('BannerPreview — showOriginal URL resolution (ER-14)', () => {
+  function makeSourceWithEnhancement({
+    showOriginal = false,
+    showBgRemoved = false,
+    enhancedUrl = 'https://example.com/enhanced.png',
+    bgRemovedUrl = 'blob:bg-removed',
+  }: {
+    showOriginal?: boolean
+    showBgRemoved?: boolean
+    enhancedUrl?: string | null
+    bgRemovedUrl?: string | null
+  } = {}) {
+    return makeState({
+      productImageSources: [{
+        id: 'src-1',
+        label: 'Catalogue',
+        originalUrl: 'https://example.com/original.png',
+        enhancedUrl,
+        enhancementStatus: 'done' as const,
+        bgRemovedUrl,
+        bgRemovalStatus: 'done' as const,
+        showBgRemoved,
+        showOriginal,
+        source: 'catalogue' as const,
+      }],
+      activeProductImageSourceId: 'src-1',
+      selectedProduct: {
+        id: 'p1',
+        name: 'Test',
+        shortDesc: '',
+        imageUrl: 'https://example.com/original.png',
+        hasValidImage: true,
+        isVeg: false,
+        isRelated: false,
+        parentId: null,
+        quantitySticker: null,
+        provider: { brandName: 'Brand', brandLogo: null, companyName: 'Co' },
+      },
+    })
+  }
+
+  function getProductImageSrc(container: HTMLElement): string | null {
+    // The product image is the img with alt="Test" (the product name)
+    const img = container.querySelector('img[alt="Test"]') as HTMLImageElement | null
+    return img?.src ?? null
+  }
+
+  it('showOriginal=true renders originalUrl even when enhancedUrl and bgRemovedUrl are set', () => {
+    const { container } = render(
+      <BannerPreview state={makeSourceWithEnhancement({ showOriginal: true, showBgRemoved: true })} />,
+    )
+    expect(getProductImageSrc(container)).toContain('original.png')
+  })
+
+  it('showOriginal=false + showBgRemoved=true renders bgRemovedUrl', () => {
+    const { container } = render(
+      <BannerPreview state={makeSourceWithEnhancement({ showOriginal: false, showBgRemoved: true })} />,
+    )
+    expect(getProductImageSrc(container)).toContain('bg-removed')
+  })
+
+  it('showOriginal=false + showBgRemoved=false renders enhancedUrl', () => {
+    const { container } = render(
+      <BannerPreview state={makeSourceWithEnhancement({ showOriginal: false, showBgRemoved: false })} />,
+    )
+    expect(getProductImageSrc(container)).toContain('enhanced.png')
+  })
+
+  it('showOriginal=false + no enhancedUrl + no bgRemovedUrl renders originalUrl', () => {
+    const { container } = render(
+      <BannerPreview state={makeSourceWithEnhancement({
+        showOriginal: false,
+        showBgRemoved: false,
+        enhancedUrl: null,
+        bgRemovedUrl: null,
+      })} />,
+    )
+    expect(getProductImageSrc(container)).toContain('original.png')
   })
 })

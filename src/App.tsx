@@ -7,7 +7,7 @@ import { useDirectLookup } from '@/hooks/useDirectLookup'
 import { useScheduledBanners } from '@/hooks/useScheduledBanners'
 import { useBackgrounds } from '@/hooks/useBackgrounds'
 import { exportBanner, generateFilename } from '@/services/exportService'
-import { removeBackground } from '@/services/removeBackgroundService'
+import { useEnhancePipeline } from '@/hooks/useEnhancePipeline'
 import { translateFields, SUPPORTED_LANGUAGES } from '@/services/translationService'
 import type { ExportFormat } from '@/services/exportService'
 import type { LanguageCode } from '@/services/translationService'
@@ -103,7 +103,12 @@ function App() {
     removeProductImageSource,
     setActiveProductImageSource,
     updateProductImageSourceBg,
+    updateProductImageSourceEnhancement,
+    resetShowOriginal,
     toggleSourceBgRemoved,
+    toggleShowOriginal,
+    showOriginalLogo,
+    toggleShowOriginalLogo,
     priceOverride,
     setPriceOverride,
     setSubheadingText,
@@ -116,6 +121,7 @@ function App() {
     toggleQuantitySticker,
     setQuantityStickerText,
     loadState,
+    resetToDefault,
   } = useBannerState()
   const { logs, addLog, clearLogs } = useLogs()
 
@@ -185,7 +191,7 @@ function App() {
   const activeProviderName = directLookup.providerResult?.provider?.name
     ?? selectedProvider?.name
 
-  // --- Logo bg removal state (unchanged from before) ---
+  // --- Logo bg removal state ---
   const [bgRemovedLogoUrl, setBgRemovedLogoUrl] = useState<string | null>(null)
   const [showBgRemovedLogo, setShowBgRemovedLogo] = useState(false)
 
@@ -196,82 +202,53 @@ function App() {
     }
   }, [bgRemovedLogoUrl])
 
-  // Reset logo bg state when selected product changes
+  // --- On-click enhance pipeline (OE) ---
+  const {
+    enhanceJobStatus,
+    enhanceJobStep,
+    runEnhancePipeline,
+    resetEnhancePipeline,
+  } = useEnhancePipeline({
+    selectedProduct,
+    productImageSources,
+    activeProductImageSourceId,
+    brandLogoOverride,
+    updateProductImageSourceEnhancement,
+    resetShowOriginal,
+    updateProductImageSourceBg,
+    setBgRemovedLogoUrl,
+    setShowBgRemovedLogo,
+    addLog,
+  })
+
+  // Reset logo bg state and the enhance pipeline when the product changes
   useEffect(() => {
     if (bgRemovedLogoUrl) URL.revokeObjectURL(bgRemovedLogoUrl)
     setBgRemovedLogoUrl(null)
     setShowBgRemovedLogo(false)
     setEnglishSources({})
+    resetEnhancePipeline()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id])
 
-  // Reset logo bg state when brand logo override changes
+  // Reset logo bg state and the enhance pipeline when the brand logo override changes
+  // so the user can re-run Enhance against the new logo.
   useEffect(() => {
     if (bgRemovedLogoUrl) {
       URL.revokeObjectURL(bgRemovedLogoUrl)
       setBgRemovedLogoUrl(null)
     }
     setShowBgRemovedLogo(false)
+    resetEnhancePipeline()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandLogoOverride])
 
-  // --- Per-source bg removal ---
-  const runBgRemovalForSource = useCallback(async (sourceId: string, sourceUrl: string) => {
-    updateProductImageSourceBg(sourceId, { bgRemovedUrl: null, bgRemovalStatus: 'removing', showBgRemoved: false })
-    try {
-      const resultUrl = await removeBackground(sourceUrl)
-      updateProductImageSourceBg(sourceId, {
-        bgRemovedUrl: resultUrl,
-        bgRemovalStatus: 'done',
-        showBgRemoved: true,
-      })
-    } catch (err) {
-      updateProductImageSourceBg(sourceId, { bgRemovedUrl: null, bgRemovalStatus: 'error', showBgRemoved: false })
-      const msg = err instanceof Error ? err.message : String(err)
-      addLog('error', `Failed to remove background: ${msg}`)
-    }
-  }, [updateProductImageSourceBg, addLog])
-
-  // Auto-trigger bg removal for any newly-added idle source
-  useEffect(() => {
-    for (const source of productImageSources) {
-      if (source.bgRemovalStatus === 'idle') {
-        void runBgRemovalForSource(source.id, source.originalUrl)
-      }
-    }
-  }, [productImageSources, runBgRemovalForSource])
-
-  // --- Logo bg removal (triggered once when product loads) ---
-  const handleRemoveLogoBackground = useCallback(async () => {
-    const logoUrl = brandLogoOverride ?? selectedProduct?.provider.brandLogo
-    if (!logoUrl) return
-    try {
-      const resultUrl = await removeBackground(logoUrl)
-      setBgRemovedLogoUrl(resultUrl)
-      setShowBgRemovedLogo(true)
-      addLog('info', 'Background removed from brand logo')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      addLog('error', `Failed to remove background from brand logo: ${msg}`)
-    }
-  }, [brandLogoOverride, selectedProduct, addLog])
-
-  // Auto-trigger logo removal when a product is selected
-  useEffect(() => {
-    if (selectedProduct) {
-      void handleRemoveLogoBackground()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProduct?.id])
-
-  // Derived: is any source currently being processed?
-  const isRemovingBg = productImageSources.some(s => s.bgRemovalStatus === 'removing')
-
-  // Handler called from BannerControls when user uploads/pastes a product image
+  // Handler called from BannerControls when user uploads/pastes a product image.
+  // Also resets the enhance job so the button re-appears for the new image.
   const handleAddProductImage = useCallback((url: string) => {
     addProductImageSource(url)
-    // The useEffect above picks up the new 'idle' source and triggers removal
-  }, [addProductImageSource])
+    resetEnhancePipeline()
+  }, [addProductImageSource, resetEnhancePipeline])
 
   // Assemble BannerState for the preview component.
   // Logo bg state is injected via brandLogoOverride; product image is derived
@@ -303,6 +280,7 @@ function App() {
       activeProductImageSourceId,
       logoImageSources,
       activeLogoImageSourceId,
+      showOriginalLogo,
       logoScale,
       productImageScale,
       quantityStickerText,
@@ -612,6 +590,9 @@ function App() {
             editingBannerState={editingScheduledId ? bannerState : null}
             onRemoveBgEntry={scheduledBanners.removeEntryBackground}
             isRemovingBg={scheduledBanners.isRemovingBg}
+            onGenerateAiImages={scheduledBanners.generateEntryAiImages}
+            onResetEntry={scheduledBanners.clearEntryState}
+            onEnhanceEntry={scheduledBanners.enhanceEntry}
           />
         )}
 
@@ -643,10 +624,13 @@ function App() {
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4">
-            <div className="rounded-3xl overflow-hidden shadow-deep">
-              <BannerPreview ref={bannerRef} state={bannerState} isRemovingBg={isRemovingBg} />
-            </div>
-
+            <BannerPreview
+              ref={bannerRef}
+              state={bannerState}
+              enhanceJobStatus={enhanceJobStatus}
+              enhanceJobStep={enhanceJobStep}
+              onEnhance={() => void runEnhancePipeline()}
+            />
             <p className="text-[10px] text-[var(--text-tertiary)] self-end">722 × 312px</p>
           </div>
         ))}
@@ -721,6 +705,7 @@ function App() {
             onToggleSourceBgRemoved={editingScheduledEntry
               ? (id) => scheduledBanners.toggleEntrySourceBgRemoved(editingScheduledEntry.id, id)
               : toggleSourceBgRemoved}
+            onToggleShowOriginal={toggleShowOriginal}
             hasBgRemovedLogo={editingScheduledEntry
               ? !!editingScheduledEntry.bgRemovedLogoUrl
               : !!bgRemovedLogoUrl}
@@ -730,12 +715,15 @@ function App() {
             onToggleBgRemovedLogo={editingScheduledEntry
               ? () => scheduledBanners.toggleEntryBgRemovedLogo(editingScheduledEntry.id)
               : () => setShowBgRemovedLogo(p => !p)}
+            showOriginalLogo={showOriginalLogo}
+            onToggleShowOriginalLogo={toggleShowOriginalLogo}
             showQuantitySticker={showQuantitySticker}
             onQuantityStickerToggle={toggleQuantitySticker}
             quantityStickerText={quantityStickerText}
             onQuantityStickerTextChange={setQuantityStickerText}
             onTranslateAll={handleTranslateAll}
             isTranslating={isTranslating}
+            onResetToDefault={appMode === 'builder' ? resetToDefault : undefined}
             />
             </div>
           </>

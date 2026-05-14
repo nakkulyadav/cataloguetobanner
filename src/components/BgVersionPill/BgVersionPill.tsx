@@ -8,11 +8,17 @@
 export default function BgVersionPill({
   showBgRemoved,
   onToggle,
+  labelA = 'Original',
+  labelB = 'BG Removed',
 }: {
-  /** Whether the BG-removed version is currently active */
+  /** Whether the second (right) segment is currently active */
   showBgRemoved: boolean
   /** Called when either segment is clicked */
   onToggle: () => void
+  /** Label for the left (first) segment. Defaults to "Original". */
+  labelA?: string
+  /** Label for the right (second) segment. Defaults to "BG Removed". */
+  labelB?: string
 }) {
   return (
     <button
@@ -22,7 +28,7 @@ export default function BgVersionPill({
       onClick={onToggle}
       className="relative flex h-7 w-full rounded-md bg-[var(--surface-2)] border border-[var(--border-muted)] cursor-pointer overflow-hidden transition-interaction"
     >
-      {/* Sliding highlight — left = Original, right = BG Removed */}
+      {/* Sliding highlight — left = labelA, right = labelB */}
       <span
         className="absolute top-0.5 bottom-0.5 w-1/2 rounded-[5px] transition-all duration-150 ease-[var(--ease-standard)]"
         style={{
@@ -30,21 +36,19 @@ export default function BgVersionPill({
           backgroundColor: 'var(--accent-base)',
         }}
       />
-      {/* "Original" segment */}
       <span
         className={`relative z-10 flex-1 flex items-center justify-center text-[11px] font-semibold transition-colors duration-150 ${
           !showBgRemoved ? 'text-white' : 'text-[var(--text-tertiary)]'
         }`}
       >
-        Original
+        {labelA}
       </span>
-      {/* "BG Removed" segment */}
       <span
         className={`relative z-10 flex-1 flex items-center justify-center text-[11px] font-semibold transition-colors duration-150 ${
           showBgRemoved ? 'text-white' : 'text-[var(--text-tertiary)]'
         }`}
       >
-        BG Removed
+        {labelB}
       </span>
     </button>
   )

@@ -13,9 +13,6 @@ import type { SheetRow, ApiCatalogItem, ApiPaginatedResponse } from '@/types'
 vi.mock('@/services/sheetsService', () => ({
   fetchSheetRows: vi.fn(),
   filterRowsForDate: vi.fn(),
-  extractProductUrl: vi.fn(),
-  extractPrice: vi.fn(),
-  parseComments: vi.fn(),
 }))
 
 vi.mock('@/services/apiService', () => ({
@@ -38,11 +35,11 @@ vi.mock('@/services/catalogueParser', async (importOriginal) => {
 function makeSheetRow(overrides: Partial<SheetRow> = {}): SheetRow {
   return {
     date: '3/30/2026',
-    team: 'bazar page',
-    page: 'Banner',
-    offerCallout: 'Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    comments: 'Header: Juicy Mangoes\nSubheader: Starting at ₹85',
-    quantitySticker: '',
+    offer: 'Free delivery',
+    productUrl: 'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
+    price: '₹85',
+    heading: 'Juicy Mangoes',
+    subheading: 'Starting at ₹85',
     ...overrides,
   }
 }
@@ -125,7 +122,7 @@ describe('useScheduledBanners', () => {
     act(() => { result.current.setDate('2026-03-30') })
 
     await waitFor(() => expect(result.current.isFetching).toBe(false))
-    expect(result.current.fetchError).toMatch(/No Bazar Page banners/)
+    expect(result.current.fetchError).toMatch(/No banners/)
     expect(result.current.entries).toHaveLength(0)
   })
 
@@ -143,11 +140,6 @@ describe('useScheduledBanners', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1'
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
     vi.mocked(apiService.searchCatalog).mockReturnValue(new Promise(() => {}))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -162,11 +154,6 @@ describe('useScheduledBanners', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1'
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -183,11 +170,10 @@ describe('useScheduledBanners', () => {
     expect(entry.bannerState?.selectedProduct?.id).toBe('item-1')
   })
 
-  it('sets entry to error when no URL is found in offer callout', async () => {
-    const row = makeSheetRow({ offerCallout: 'Our price - 85 + Free delivery' })
+  it('sets entry to error when no URL is present in the row', async () => {
+    const row = makeSheetRow({ productUrl: '' })
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(null)
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
@@ -200,9 +186,6 @@ describe('useScheduledBanners', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1'
-    )
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([]))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -213,16 +196,11 @@ describe('useScheduledBanners', () => {
   })
 
   it('handles multiple rows — ready and error can coexist', async () => {
-    const rowA = makeSheetRow({ comments: 'Header: Mangoes\nSubheader: Fresh' })
-    const rowB = makeSheetRow({ offerCallout: 'No URL here' })
+    const rowA = makeSheetRow({ heading: 'Mangoes', subheading: 'Fresh' })
+    const rowB = makeSheetRow({ productUrl: '' })
 
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([rowA, rowB])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([rowA, rowB])
-    vi.mocked(sheetsService.extractProductUrl)
-      .mockReturnValueOnce('https://digihaat.in/en/product?item_id=item-1&bpp_id=x&domain=y&provider_id=z')
-      .mockReturnValueOnce(null)
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Mangoes', subheading: 'Fresh' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -265,11 +243,6 @@ describe('ISL: resolveEntry initialises productImageSources', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -292,11 +265,6 @@ describe('ISL: resolveEntry initialises productImageSources', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([itemNoImg]))
 
     const { result } = renderHook(() => useScheduledBanners())
@@ -310,39 +278,25 @@ describe('ISL: resolveEntry initialises productImageSources', () => {
 })
 
 // ---------------------------------------------------------------------------
-// QST-12: resolveEntry — quantity sticker passthrough from sheet row
+// QST-12: resolveEntry — quantity sticker defaults (not from sheet)
 // ---------------------------------------------------------------------------
 
-describe('QST-12: resolveEntry — quantity sticker from sheet row', () => {
+describe('QST-12: resolveEntry — quantity sticker defaults', () => {
   beforeEach(() => { vi.resetAllMocks() })
   afterEach(() => { vi.restoreAllMocks() })
 
-  async function resolveWithSticker(quantitySticker: string) {
-    const row = makeSheetRow({ quantitySticker })
+  it('always sets quantityStickerText=null and showQuantitySticker=false (sheet has no sticker column)', async () => {
+    const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
     vi.mocked(removeBackgroundService.removeBackground).mockResolvedValue('blob:removed')
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
     await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
-    return result.current.entries[0]!.bannerState!
-  }
 
-  it('sets quantityStickerText and showQuantitySticker=true from a non-empty sheet value', async () => {
-    const bs = await resolveWithSticker('PACK OF 3')
-    expect(bs.quantityStickerText).toBe('PACK OF 3')
-    expect(bs.showQuantitySticker).toBe(true)
-  })
-
-  it('sets quantityStickerText=null and showQuantitySticker=false for empty sheet value', async () => {
-    const bs = await resolveWithSticker('')
+    const bs = result.current.entries[0]!.bannerState!
     expect(bs.quantityStickerText).toBeNull()
     expect(bs.showQuantitySticker).toBe(false)
   })
@@ -363,11 +317,6 @@ describe('ISL: removeEntryBackground — per-source processing', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
   }
 
@@ -441,11 +390,6 @@ describe('ISL: toggleEntrySourceBgRemoved and setEntryActiveSource', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
   }
 
@@ -489,17 +433,11 @@ describe('updateEntryState', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   async function setupTwoReadyEntries() {
-    const rowA = makeSheetRow({ comments: 'Header: Mangoes\nSubheader: Fresh' })
-    const rowB = makeSheetRow({ comments: 'Header: Apples\nSubheader: Crisp' })
+    const rowA = makeSheetRow({ heading: 'Mangoes', subheading: 'Fresh' })
+    const rowB = makeSheetRow({ heading: 'Apples', subheading: 'Crisp' })
 
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([rowA, rowB])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([rowA, rowB])
-    vi.mocked(sheetsService.extractProductUrl)
-      .mockReturnValue('https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1')
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments)
-      .mockReturnValueOnce({ heading: 'Mangoes', subheading: 'Fresh' })
-      .mockReturnValueOnce({ heading: 'Apples', subheading: 'Crisp' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
   }
 
@@ -560,11 +498,6 @@ describe('toggleEntryBgRemovedLogo', () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
   }
 
@@ -592,37 +525,32 @@ describe('setDate — blob URL revocation', () => {
   })
   afterEach(() => { vi.restoreAllMocks() })
 
-  it('revokes source bgRemovedUrl and bgRemovedLogoUrl when date changes', async () => {
+  it('clears entries when date changes (bgRemoved R2 URLs are stable — not revoked)', async () => {
     const row = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([row])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([row])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue('₹85')
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: 'Juicy Mangoes', subheading: 'Starting at ₹85' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
     vi.mocked(removeBackgroundService.removeBackground)
-      .mockResolvedValueOnce('blob:product-result')
-      .mockResolvedValueOnce('blob:logo-result')
+      .mockResolvedValueOnce('/api/images/product-key')
+      .mockResolvedValueOnce('/api/images/logo-key')
 
     const { result } = renderHook(() => useScheduledBanners())
     act(() => { result.current.setDate('2026-03-30') })
     await waitFor(() => expect(result.current.entries[0]?.status).toBe('ready'))
     await act(async () => { await result.current.removeEntryBackground(result.current.entries[0]!.id) })
 
-    // Confirm blob URLs are set before date change
+    // Confirm R2 URLs are stored
     const catSrc = result.current.entries[0]!.bannerState!.productImageSources[0]!
-    expect(catSrc.bgRemovedUrl).toBe('blob:product-result')
-    expect(result.current.entries[0]!.bgRemovedLogoUrl).toBe('blob:logo-result')
+    expect(catSrc.bgRemovedUrl).toBe('/api/images/product-key')
+    expect(result.current.entries[0]!.bgRemovedLogoUrl).toBe('/api/images/logo-key')
 
-    // Change date — cleanup should run
+    // Change date — entries are cleared; stable R2 URLs are not revoked
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([])
     act(() => { result.current.setDate('2026-03-31') })
 
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:product-result')
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:logo-result')
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('/api/images/product-key')
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('/api/images/logo-key')
     expect(result.current.entries).toHaveLength(0)
   })
 })
@@ -646,11 +574,6 @@ describe('ABR-7 — auto background removal on setDate', () => {
     const rowB = makeSheetRow()
     vi.mocked(sheetsService.fetchSheetRows).mockResolvedValue([rowA, rowB])
     vi.mocked(sheetsService.filterRowsForDate).mockReturnValue([rowA, rowB])
-    vi.mocked(sheetsService.extractProductUrl).mockReturnValue(
-      'https://digihaat.in/en/product?item_id=item-1&bpp_id=bpp-1&domain=ONDC%3ARET10&provider_id=prov-1',
-    )
-    vi.mocked(sheetsService.extractPrice).mockReturnValue(null)
-    vi.mocked(sheetsService.parseComments).mockReturnValue({ heading: '', subheading: '' })
     vi.mocked(apiService.searchCatalog).mockResolvedValue(makeApiResponse([makeApiItem('item-1')]))
   }
 

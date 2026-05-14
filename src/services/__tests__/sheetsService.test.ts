@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   filterRowsForDate,
-  extractProductUrl,
-  extractPrice,
-  parseComments,
 } from '../sheetsService'
 import type { SheetRow } from '@/types'
 
@@ -14,11 +11,11 @@ import type { SheetRow } from '@/types'
 function makeRow(overrides: Partial<SheetRow> = {}): SheetRow {
   return {
     date: '3/30/2026',
-    team: 'bazar page',
-    page: 'Banner',
-    offerCallout: 'Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?item_id=abc&bpp_id=x&domain=y&provider_id=z',
-    comments: 'Header: Fresh Fruits\nSubheader: Starting at ₹85',
-    quantitySticker: '',
+    offer: 'Free delivery',
+    productUrl: 'https://digihaat.in/en/product?item_id=abc&bpp_id=x&domain=ONDC%3ARET10&provider_id=z',
+    price: '₹85',
+    heading: 'Fresh Fruits',
+    subheading: 'Starting at ₹85',
     ...overrides,
   }
 }
@@ -29,46 +26,28 @@ function makeRow(overrides: Partial<SheetRow> = {}): SheetRow {
 
 describe('filterRowsForDate', () => {
   const rows: SheetRow[] = [
-    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'Banner' }),
-    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'Homepage' }),  // wrong page
-    makeRow({ date: '3/30/2026', team: 'sales',        page: 'Banner' }),   // wrong team
-    makeRow({ date: '3/31/2026', team: 'bazar page',  page: 'Banner' }),   // wrong date
-    makeRow({ date: '3/30/2026', team: 'Bazar Page',  page: 'Banner' }),   // team casing
-    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'banner' }),   // page casing
-    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'Supermall' }), // supermall page
-    makeRow({ date: '3/30/2026', team: 'bazar page',  page: 'supermall' }), // supermall casing
+    makeRow({ date: '3/30/2026' }),
+    makeRow({ date: '3/31/2026' }),  // wrong date
+    makeRow({ date: '03/30/2026' }), // leading zeros — should normalise to match
+    makeRow({ date: '4/1/2026' }),   // different date
   ]
 
-  it('returns rows matching date, team=bazar page, page=Banner or Supermall', () => {
+  it('returns rows matching the target date', () => {
     const result = filterRowsForDate(rows, '03/30/2026')
-    // Rows 0, 4, 5, 6, 7 match (casing is normalised)
-    expect(result).toHaveLength(5)
-  })
-
-  it('excludes rows with wrong page', () => {
-    const result = filterRowsForDate(rows, '03/30/2026')
-    const allowedPages = ['banner', 'supermall']
-    expect(result.every(r => allowedPages.includes(r.page.trim().toLowerCase()))).toBe(true)
-  })
-
-  it('includes supermall page rows', () => {
-    const result = filterRowsForDate(rows, '03/30/2026')
-    expect(result.some(r => r.page.toLowerCase() === 'supermall')).toBe(true)
-  })
-
-  it('excludes rows with wrong team', () => {
-    const result = filterRowsForDate(rows, '03/30/2026')
-    expect(result.every(r => r.team.toLowerCase() === 'bazar page')).toBe(true)
-  })
-
-  it('excludes rows with wrong date', () => {
-    const result = filterRowsForDate(rows, '03/30/2026')
-    expect(result.some(r => r.date === '3/31/2026')).toBe(false)
+    expect(result).toHaveLength(2)
   })
 
   it('normalises leading zeros — "03/30/2026" matches sheet "3/30/2026"', () => {
     const result = filterRowsForDate(rows, '03/30/2026')
     expect(result.length).toBeGreaterThan(0)
+  })
+
+  it('excludes rows with a different date', () => {
+    const result = filterRowsForDate(rows, '03/30/2026')
+    expect(result.every(r => {
+      const [m, d, y] = r.date.split('/')
+      return `${parseInt(m!, 10)}/${parseInt(d!, 10)}/${y}` === '3/30/2026'
+    })).toBe(true)
   })
 
   it('returns empty array when no rows match', () => {
@@ -81,193 +60,74 @@ describe('filterRowsForDate', () => {
 })
 
 // ---------------------------------------------------------------------------
-// SB-4: extractProductUrl
+// fetchSheetRows — column parsing
 // ---------------------------------------------------------------------------
 
-describe('extractProductUrl', () => {
-  it('extracts a digihaat.in product URL from a multiline string', () => {
-    const input = 'Our price - 85 + Free delivery\n\nhttps://digihaat.in/en/product?item_id=abc123&bpp_id=x&domain=ONDC%3ARET10&provider_id=p'
-    expect(extractProductUrl(input)).toBe(
-      'https://digihaat.in/en/product?item_id=abc123&bpp_id=x&domain=ONDC%3ARET10&provider_id=p'
-    )
-  })
-
-  it('returns null when no URL is present', () => {
-    expect(extractProductUrl('Our price - 85 + Free delivery')).toBeNull()
-  })
-
-  it('returns null for an empty string', () => {
-    expect(extractProductUrl('')).toBeNull()
-  })
-
-  it('ignores non-digihaat URLs', () => {
-    expect(extractProductUrl('https://example.com/product?id=1')).toBeNull()
-  })
-
-  it('handles URL with query params in any order', () => {
-    const input = 'https://digihaat.in/en/product?provider_id=d988b3a1&bpp_id=ondcseller-prod.costbo.com&domain=ONDC%3ARET10&item_id=f8626ac0'
-    expect(extractProductUrl(input)).toBe(input)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// SB-5: extractPrice
-// ---------------------------------------------------------------------------
-
-describe('extractPrice', () => {
-  it('extracts a simple integer price', () => {
-    expect(extractPrice('Our price - 85 + Free delivery')).toBe('₹85')
-  })
-
-  it('extracts a price with commas (thousands separator)', () => {
-    expect(extractPrice('Our price - 1,299 + Free delivery')).toBe('₹1299')
-  })
-
-  it('extracts price when it is the only content', () => {
-    expect(extractPrice('370')).toBe('₹370')
-  })
-
-  it('picks the first number when multiple numbers appear', () => {
-    // "85" should win over any number that appears later
-    expect(extractPrice('Our price - 85 + Free delivery 100')).toBe('₹85')
-  })
-
-  it('returns null when no number is found', () => {
-    expect(extractPrice('Free delivery')).toBeNull()
-  })
-
-  it('returns null for an empty string', () => {
-    expect(extractPrice('')).toBeNull()
-  })
-
-  it('handles large prices with commas correctly', () => {
-    expect(extractPrice('Special price - 12,999 only')).toBe('₹12999')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// SB-6: parseComments
-// ---------------------------------------------------------------------------
-
-describe('parseComments', () => {
-  it('extracts header and subheader', () => {
-    const result = parseComments('Header: Fresh Fruits\nSubheader: Starting at ₹85')
-    expect(result.heading).toBe('Fresh Fruits')
-    expect(result.subheading).toBe('Starting at ₹85')
-  })
-
-  it('trims whitespace from extracted values', () => {
-    const result = parseComments('Header:   Mango Delight  \nSubheader:  Best Deals  ')
-    expect(result.heading).toBe('Mango Delight')
-    expect(result.subheading).toBe('Best Deals')
-  })
-
-  it('is case-insensitive for label matching', () => {
-    const result = parseComments('HEADER: Tomatoes\nSUBHEADER: Fresh daily')
-    expect(result.heading).toBe('Tomatoes')
-    expect(result.subheading).toBe('Fresh daily')
-  })
-
-  it('returns empty string for missing header', () => {
-    const result = parseComments('Subheader: Only subheader')
-    expect(result.heading).toBe('')
-    expect(result.subheading).toBe('Only subheader')
-  })
-
-  it('returns empty string for missing subheader', () => {
-    const result = parseComments('Header: Only header')
-    expect(result.heading).toBe('Only header')
-    expect(result.subheading).toBe('')
-  })
-
-  it('returns empty strings when comments is empty', () => {
-    const result = parseComments('')
-    expect(result.heading).toBe('')
-    expect(result.subheading).toBe('')
-  })
-
-  it('returns empty strings when no labels are found', () => {
-    const result = parseComments('Some random comment without labels')
-    expect(result.heading).toBe('')
-    expect(result.subheading).toBe('')
-  })
-
-  it('handles headers with special characters and rupee symbols', () => {
-    const result = parseComments('Header: Premium Deals — ₹99 Only!\nSubheader: Limited time')
-    expect(result.heading).toBe('Premium Deals — ₹99 Only!')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// QST-10: fetchSheetRows — optional "quantity sticker" column
-// ---------------------------------------------------------------------------
-
-describe('QST-10: fetchSheetRows — optional quantity sticker column', () => {
-  /**
-   * Build a minimal gviz/tq-style JSONP response with the given columns and rows.
-   */
-  function buildGvizJsonp(cols: string[], rows: Array<Array<string | null>>): string {
-    const colDefs = cols.map(label => ({ label, type: 'string', id: label }))
-    const rowDefs = rows.map(cells => ({
-      c: cells.map(v => (v === null ? null : { v })),
-    }))
-    const payload = JSON.stringify({ table: { cols: colDefs, rows: rowDefs } })
-    return `/*O_o*/\ngoogle.visualization.Query.setResponse(${payload});`
+describe('fetchSheetRows — column parsing', () => {
+  // /api/sheets strips JSONP server-side and returns the parsed gviz table as JSON.
+  function buildGvizResponse(cols: string[], rows: Array<Array<string | null>>): unknown {
+    return {
+      table: {
+        cols: cols.map(label => ({ label, type: 'string', id: label })),
+        rows: rows.map(cells => ({ c: cells.map(v => (v === null ? null : { v })) })),
+      },
+    }
   }
 
-  const REQUIRED_COLS = [
-    'Date',
-    'Team',
-    'Page\nHomepage/Food/Grocery etc',
-    'Offer callout',
-    'Comments',
-  ]
-
-  it('populates quantitySticker when the column is present and non-empty', async () => {
-    const cols = [...REQUIRED_COLS, 'quantity sticker']
-    const rows = [['3/30/2026', 'bazar page', 'Banner', 'callout', 'comments', 'PACK OF 3']]
-    const jsonp = buildGvizJsonp(cols, rows)
-
+  function mockSheetsApi(gvizJson: unknown) {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve(jsonp),
+      json: () => Promise.resolve(gvizJson),
     } as unknown as Response)
+  }
+
+  const REQUIRED_COLS = ['Date', 'Offer', 'URL', 'Discounted Price', 'Header', 'Subheader']
+
+  it('parses a full row correctly', async () => {
+    mockSheetsApi(buildGvizResponse(REQUIRED_COLS, [
+      ['4/2/2026', 'Free delivery', 'https://digihaat.in/en/product?item_id=abc', '19', 'Value Besan Deal', 'Best Price, Same Quality'],
+    ]))
 
     const { fetchSheetRows } = await import('../sheetsService')
     const result = await fetchSheetRows()
 
-    expect(result[0]!.quantitySticker).toBe('PACK OF 3')
+    expect(result[0]).toMatchObject({
+      date: '4/2/2026',
+      offer: 'Free delivery',
+      productUrl: 'https://digihaat.in/en/product?item_id=abc',
+      price: '₹19',
+      heading: 'Value Besan Deal',
+      subheading: 'Best Price, Same Quality',
+    })
   })
 
-  it('defaults quantitySticker to empty string when the column is absent', async () => {
-    const cols = REQUIRED_COLS
-    const rows = [['3/30/2026', 'bazar page', 'Banner', 'callout', 'comments']]
-    const jsonp = buildGvizJsonp(cols, rows)
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(jsonp),
-    } as unknown as Response)
+  it('prefixes price with ₹', async () => {
+    mockSheetsApi(buildGvizResponse(REQUIRED_COLS, [
+      ['4/2/2026', 'Free delivery', 'https://digihaat.in/en/product?item_id=abc', '129', 'Ruffpad', 'Write, Erase, Repeat'],
+    ]))
 
     const { fetchSheetRows } = await import('../sheetsService')
     const result = await fetchSheetRows()
 
-    expect(result[0]!.quantitySticker).toBe('')
+    expect(result[0]!.price).toBe('₹129')
   })
 
-  it('defaults quantitySticker to empty string when cell is blank', async () => {
-    const cols = [...REQUIRED_COLS, 'quantity sticker']
-    const rows = [['3/30/2026', 'bazar page', 'Banner', 'callout', 'comments', null]]
-    const jsonp = buildGvizJsonp(cols, rows)
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(jsonp),
-    } as unknown as Response)
+  it('sets price to empty string when cell is blank', async () => {
+    mockSheetsApi(buildGvizResponse(REQUIRED_COLS, [
+      ['4/2/2026', 'Free delivery', 'https://digihaat.in/en/product?item_id=abc', null, 'Header', 'Sub'],
+    ]))
 
     const { fetchSheetRows } = await import('../sheetsService')
     const result = await fetchSheetRows()
 
-    expect(result[0]!.quantitySticker).toBe('')
+    expect(result[0]!.price).toBe('')
+  })
+
+  it('throws when a required column is missing', async () => {
+    const cols = ['Date', 'Offer', 'URL', 'Header', 'Subheader'] // missing 'Discounted Price'
+    mockSheetsApi(buildGvizResponse(cols, [['4/2/2026', 'Free delivery', 'https://digihaat.in/', 'H', 'S']]))
+
+    const { fetchSheetRows } = await import('../sheetsService')
+    await expect(fetchSheetRows()).rejects.toThrow('Required column(s) not found in sheet')
   })
 })

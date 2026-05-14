@@ -32,7 +32,7 @@ export default function ExportModal({
       <div className="dialog-enter bg-[var(--surface-1)] border border-[var(--border-muted)] rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-[var(--text-primary)]">Export Banner</h3>
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">Export to CMS</h3>
           <button
             onClick={onClose}
             className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-[var(--surface-2)] transition-interaction cursor-pointer"
@@ -53,11 +53,10 @@ export default function ExportModal({
                 onClose()
               }}
               disabled={!canExport}
-              className={`px-4 py-3 rounded-lg text-sm font-semibold transition-interaction cursor-pointer ${
-                canExport
+              className={`px-4 py-3 rounded-lg text-sm font-semibold transition-interaction cursor-pointer ${canExport
                   ? 'bg-[var(--accent-base)] hover:bg-[var(--accent-hover)] text-white active:scale-[0.98]'
                   : 'bg-[var(--surface-2)] text-[var(--text-disabled)] cursor-not-allowed'
-              }`}
+                }`}
             >
               {isExporting ? 'Exporting...' : opt.label}
             </button>

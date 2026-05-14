@@ -1,5 +1,10 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { BannerState, ParsedProduct, BackgroundOption, ProductPrice, ImageSource } from '../types';
+import {
+  saveEditorState,
+  loadEditorState,
+  clearEditorState,
+} from '../services/persistenceService';
 
 interface BannerContextType extends BannerState {
   toggleQuantitySticker: () => void;
@@ -8,6 +13,11 @@ interface BannerContextType extends BannerState {
   selectBackground: (bg: BackgroundOption | null) => void;
   /** Bulk-load a full BannerState — used when editing a scheduled banner. */
   loadState: (state: BannerState) => void;
+  /**
+   * Clears the persisted state for the current product and resets all fields
+   * to their default values. Exposed for the "Reset to default" button.
+   */
+  resetToDefault: () => void;
   setCtaText: (text: string) => void;
   setBadgeText: (text: string) => void;
   setShowTnc: (show: boolean) => void;
@@ -39,8 +49,21 @@ interface BannerContextType extends BannerState {
     id: string,
     update: Pick<ImageSource, 'bgRemovedUrl' | 'bgRemovalStatus' | 'showBgRemoved'>,
   ) => void;
+  /** Patch enhancement state on one product image source. */
+  updateProductImageSourceEnhancement: (
+    id: string,
+    update: Pick<ImageSource, 'enhancedUrl' | 'enhancementStatus'>,
+  ) => void;
   /** Flip showBgRemoved on a specific product image source. */
   toggleSourceBgRemoved: (id: string) => void;
+  /** Flip showOriginal on a specific product image source. */
+  toggleShowOriginal: (id: string) => void;
+  /** Reset showOriginal to false on a specific product image source (called after re-enhancement). */
+  resetShowOriginal: (id: string) => void;
+  /** Flip showOriginal on a specific logo source. */
+  toggleShowOriginalLogoSource: (id: string) => void;
+  /** Flip showOriginalLogo on the overall BannerState (affects bg-removed logo display). */
+  toggleShowOriginalLogo: () => void;
   /** Append a new user-uploaded logo source; auto-activates it; returns its id. */
   addLogoImageSource: (url: string, label?: string) => string;
   /** Remove a user logo source by id; switches active to the preceding source. */
@@ -85,6 +108,8 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [productImageScale, setProductImageScale] = useState(1);
   const [quantityStickerText, setQuantityStickerText] = useState<string | null>(null);
   const [showQuantitySticker, setShowQuantitySticker] = useState(false);
+  /** When true, the preview ignores bgRemovedLogoUrl and shows the original logo. */
+  const [showOriginalLogo, setShowOriginalLogo] = useState(false);
 
   const toggleTnc = useCallback(() => setShowTnc(prev => !prev), []);
   const toggleBadge = useCallback(() => setShowBadge(prev => !prev), []);
@@ -94,6 +119,63 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const toggleHeading = useCallback(() => setShowHeading(prev => !prev), []);
   const toggleCta = useCallback(() => setShowCta(prev => !prev), []);
   const toggleSubheading = useCallback(() => setShowSubheading(prev => !prev), []);
+
+  // -------------------------------------------------------------------------
+  // Auto-save (SS-5): debounced 800ms after any state change.
+  // Only fires when a product is selected — without a product there is no key
+  // to store state under.
+  // -------------------------------------------------------------------------
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const productId = selectedProduct.id;
+
+    // Snapshot the entire BannerState from individual pieces of React state
+    const snapshot: BannerState = {
+      selectedProduct,
+      selectedBackground,
+      ctaText,
+      badgeText,
+      showTnc,
+      showBadge,
+      showPrice,
+      showLogo,
+      showHeading,
+      showCta,
+      showSubheading,
+      subheadingText,
+      tncText,
+      brandLogoOverride,
+      productNameOverride,
+      priceOverride,
+      productImageSources,
+      activeProductImageSourceId,
+      logoImageSources,
+      activeLogoImageSourceId,
+      logoScale,
+      productImageScale,
+      quantityStickerText,
+      showQuantitySticker,
+      showOriginalLogo,
+    };
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      void saveEditorState(productId, snapshot);
+    }, 800);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [
+    selectedProduct, selectedBackground, ctaText, badgeText, showTnc, showBadge,
+    showPrice, showLogo, showHeading, showCta, showSubheading, subheadingText,
+    tncText, brandLogoOverride, productNameOverride, priceOverride,
+    productImageSources, activeProductImageSourceId, logoImageSources,
+    activeLogoImageSourceId, logoScale, productImageScale,
+    quantityStickerText, showQuantitySticker, showOriginalLogo,
+  ]);
 
   const loadState = useCallback((state: BannerState) => {
     setSelectedProduct(state.selectedProduct);
@@ -120,20 +202,19 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setProductImageScale(state.productImageScale);
     setQuantityStickerText(state.quantityStickerText);
     setShowQuantitySticker(state.showQuantitySticker);
+    setShowOriginalLogo(state.showOriginalLogo ?? false);
   }, []);
 
-  // Reset all per-product overrides when switching products.
-  // Clears user image sources; initialises the catalogue source if the product has an imageUrl.
-  const selectProduct = useCallback((product: ParsedProduct | null) => {
+  // Helper: apply the default field reset for a given product (no persistence logic).
+  const applyProductDefaults = useCallback((product: ParsedProduct | null) => {
     setSelectedProduct(product);
     setProductNameOverride(null);
     setPriceOverride(null);
+    setShowOriginalLogo(false);
     setSubheadingText('');
     setBrandLogoOverride(null);
-    // Reset zoom scales — each product starts at 100% zoom.
     setLogoScale(1);
     setProductImageScale(1);
-    // Auto-populate quantity sticker from catalogue field
     setQuantityStickerText(product?.quantitySticker ?? null);
     setShowQuantitySticker(!!product?.quantitySticker);
 
@@ -142,9 +223,12 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         id: 'catalogue',
         label: 'Catalogue',
         originalUrl: product.imageUrl,
+        enhancedUrl: null,
+        enhancementStatus: 'idle',
         bgRemovedUrl: null,
         bgRemovalStatus: 'idle',
         showBgRemoved: false,
+        showOriginal: false,
         source: 'catalogue',
       };
       setProductImageSources([catalogueSource]);
@@ -155,6 +239,58 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
+  /**
+   * Select a product (SS-6): apply defaults first, then check IndexedDB for a
+   * saved state and restore it if one exists. This means the user always sees
+   * their last-edited banner when returning to a product.
+   */
+  const selectProduct = useCallback((product: ParsedProduct | null) => {
+    applyProductDefaults(product);
+
+    if (!product) return;
+
+    void loadEditorState(product.id).then(saved => {
+      if (!saved) return;
+      // Restore the full persisted state via the existing loadState path.
+      setSelectedProduct(saved.selectedProduct);
+      setSelectedBackground(saved.selectedBackground);
+      setCtaText(saved.ctaText);
+      setBadgeText(saved.badgeText);
+      setShowTnc(saved.showTnc);
+      setShowBadge(saved.showBadge);
+      setTncText(saved.tncText);
+      setBrandLogoOverride(saved.brandLogoOverride);
+      setProductNameOverride(saved.productNameOverride);
+      setShowPrice(saved.showPrice);
+      setPriceOverride(saved.priceOverride);
+      setSubheadingText(saved.subheadingText);
+      setShowLogo(saved.showLogo);
+      setShowHeading(saved.showHeading);
+      setShowCta(saved.showCta);
+      setShowSubheading(saved.showSubheading);
+      setProductImageSources(saved.productImageSources);
+      setActiveProductImageSourceId(saved.activeProductImageSourceId);
+      setLogoImageSources(saved.logoImageSources);
+      setActiveLogoImageSourceId(saved.activeLogoImageSourceId);
+      setLogoScale(saved.logoScale);
+      setProductImageScale(saved.productImageScale);
+      setQuantityStickerText(saved.quantityStickerText);
+      setShowQuantitySticker(saved.showQuantitySticker);
+      setShowOriginalLogo(saved.showOriginalLogo ?? false);
+    });
+  }, [applyProductDefaults]);
+
+  /**
+   * Reset to default (SS-7): clears persisted state for the current product
+   * and restores all fields to their out-of-the-box defaults.
+   */
+  const resetToDefault = useCallback(() => {
+    if (selectedProduct) {
+      void clearEditorState(selectedProduct.id);
+    }
+    applyProductDefaults(selectedProduct);
+  }, [selectedProduct, applyProductDefaults]);
+
   const addProductImageSource = useCallback((url: string, label?: string): string => {
     const id = crypto.randomUUID();
     setProductImageSources(prev => {
@@ -163,9 +299,12 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         id,
         label: label ?? `Upload ${userCount + 1}`,
         originalUrl: url,
+        enhancedUrl: null,
+        enhancementStatus: 'idle',
         bgRemovedUrl: null,
         bgRemovalStatus: 'idle',
         showBgRemoved: false,
+        showOriginal: false,
         source: 'user',
       };
       return [...prev, newSource];
@@ -179,8 +318,6 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const source = prev.find(s => s.id === id);
       if (!source || source.source !== 'user') return prev;
 
-      // Revoke blob URLs to prevent memory leaks
-      if (source.bgRemovedUrl?.startsWith('blob:')) URL.revokeObjectURL(source.bgRemovedUrl);
       if (source.originalUrl.startsWith('blob:')) URL.revokeObjectURL(source.originalUrl);
 
       const next = prev.filter(s => s.id !== id);
@@ -210,6 +347,15 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [],
   );
 
+  const updateProductImageSourceEnhancement = useCallback(
+    (id: string, update: Pick<ImageSource, 'enhancedUrl' | 'enhancementStatus'>) => {
+      setProductImageSources(prev =>
+        prev.map(s => (s.id === id ? { ...s, ...update } : s)),
+      );
+    },
+    [],
+  );
+
   const toggleSourceBgRemoved = useCallback((id: string) => {
     setProductImageSources(prev =>
       prev.map(s => (s.id === id ? { ...s, showBgRemoved: !s.showBgRemoved } : s)),
@@ -226,9 +372,12 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         id,
         label: label ?? `Upload ${userCount + 1}`,
         originalUrl: url,
+        enhancedUrl: null,
+        enhancementStatus: 'idle',
         bgRemovedUrl: null,
         bgRemovalStatus: 'idle',
         showBgRemoved: false,
+        showOriginal: false,
         source: 'user',
       };
       return [...prev, newSource];
@@ -241,7 +390,6 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setLogoImageSources(prev => {
       const source = prev.find(s => s.id === id);
       if (!source || source.source !== 'user') return prev;
-      if (source.bgRemovedUrl?.startsWith('blob:')) URL.revokeObjectURL(source.bgRemovedUrl);
       if (source.originalUrl.startsWith('blob:')) URL.revokeObjectURL(source.originalUrl);
       const next = prev.filter(s => s.id !== id);
       setActiveLogoImageSourceId(currentActive => {
@@ -273,6 +421,32 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
   }, []);
 
+  /** Flip showOriginal on one product image source. */
+  const toggleShowOriginal = useCallback((id: string) => {
+    setProductImageSources(prev =>
+      prev.map(s => (s.id === id ? { ...s, showOriginal: !s.showOriginal } : s)),
+    );
+  }, []);
+
+  /** Force showOriginal to false on one product image source (called after re-enhancement). */
+  const resetShowOriginal = useCallback((id: string) => {
+    setProductImageSources(prev =>
+      prev.map(s => (s.id === id ? { ...s, showOriginal: false } : s)),
+    );
+  }, []);
+
+  /** Flip showOriginal on one logo source. */
+  const toggleShowOriginalLogoSource = useCallback((id: string) => {
+    setLogoImageSources(prev =>
+      prev.map(s => (s.id === id ? { ...s, showOriginal: !s.showOriginal } : s)),
+    );
+  }, []);
+
+  /** Flip showOriginalLogo — bypasses bgRemovedLogoUrl and shows the original logo. */
+  const toggleShowOriginalLogo = useCallback(() => {
+    setShowOriginalLogo(prev => !prev);
+  }, []);
+
   const value: BannerContextType = {
     // State values
     selectedProduct,
@@ -299,6 +473,7 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     productImageScale,
     quantityStickerText,
     showQuantitySticker,
+    showOriginalLogo,
     // Setters & toggles
     selectProduct,
     selectBackground: setSelectedBackground,
@@ -326,13 +501,19 @@ export const BannerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     removeProductImageSource,
     setActiveProductImageSource,
     updateProductImageSourceBg,
+    updateProductImageSourceEnhancement,
     toggleSourceBgRemoved,
+    toggleShowOriginal,
+    resetShowOriginal,
+    toggleShowOriginalLogoSource,
+    toggleShowOriginalLogo,
     addLogoImageSource,
     removeLogoImageSource,
     setActiveLogoImageSource,
     updateLogoImageSourceBg,
     toggleLogoSourceBgRemoved,
     loadState,
+    resetToDefault,
   };
 
   return (

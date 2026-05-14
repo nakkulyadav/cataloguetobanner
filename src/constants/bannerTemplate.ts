@@ -41,7 +41,7 @@ export const PRODUCT_NAME = {
   fontFamily: '"Inter", sans-serif',
   fontWeight: 700,
   color: '#000000',
-  lineHeight: 1.2,
+  lineHeight: 1.4,
   maxLines: 2,
   maxFontSize: 32,
   minFontSize: 22,
@@ -53,10 +53,10 @@ export const PRODUCT_NAME = {
 // room for the subheading, price, and CTA within the 272px content area.
 export const HEADING_COMPACT = {
   fontWeight: 600,
-  lineHeight: 1.2,
+  lineHeight: 1.4,
   maxLines: 2,
   maxFontSize: 28,
-  minFontSize: 20,
+  minFontSize: 18,
   fontSizeStep: 1,
 };
 
@@ -67,14 +67,17 @@ export const SUBHEADING = {
 };
 
 // --- Subheading Text (independent element between heading and price) ---
+// Adaptive: tries to fit on 1 line by shrinking font from maxFontSize → minFontSize.
+// Falls back to 2 lines at minFontSize if still too long.
 export const SUBHEADING_TEXT = {
   fontSize: 26,
+  maxFontSize: 26,
+  minFontSize: 21,
+  fontSizeStep: 1,
   fontWeight: 400,
   color: '#000000',
   fontFamily: '"Inter", sans-serif',
-  /** lineHeight: 1.2 leaves room for descenders (g, y, p, q) */
-  lineHeight: 1.2,
-  /** Allow up to 2 lines before clamping — measured + applied at render time */
+  lineHeight: 1.4,
   maxLines: 2,
 };
 
@@ -124,7 +127,7 @@ export const TNC_TEXT = {
   color: '#5F5F5F',
   maxWidth: 370,
   /** lineHeight: 1.2 ensures height = fontSize * 1.2 = TNC_HEIGHT */
-  lineHeight: 1.2,
+  lineHeight: 1.1,
 };
 
 // --- Offer Badge (top-right, flush with canvas edges) ---
@@ -144,12 +147,12 @@ export const OFFER_BADGE = {
 // When an element is hidden, its neighbors collapse using the fallback lookup
 // in getGapBetween() which walks the ordered element list.
 export const LEFT_SECTION_GAPS: Record<string, number> = {
-  'logo-heading': 5,
-  'heading-subheading': 10,  // compact heading → subheading
-  'heading-price': 10,       // normal heading → price (subheading off)
-  'subheading-price': 15,    // subheading → price
-  'subheading-cta': 10,      // subheading → CTA (when price is off)
-  'price-cta': 10,           // price → CTA
+  'logo-heading': 3,
+  'heading-subheading': 5,  // compact heading → subheading
+  'heading-price': 5,       // normal heading → price (subheading off)
+  'subheading-price': 5,    // subheading → price
+  'subheading-cta': 5,      // subheading → CTA (when price is off)
+  'price-cta': 5,           // price → CTA
   'cta-tnc': 3,
 };
 

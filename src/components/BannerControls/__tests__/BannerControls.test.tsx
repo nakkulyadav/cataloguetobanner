@@ -13,9 +13,12 @@ function makeSource(overrides: Partial<ImageSource> = {}): ImageSource {
     id: 'catalogue',
     label: 'Catalogue',
     originalUrl: 'https://example.com/product.png',
+    enhancedUrl: null,
+    enhancementStatus: 'idle',
     bgRemovedUrl: null,
     bgRemovalStatus: 'idle',
     showBgRemoved: false,
+    showOriginal: false,
     source: 'catalogue',
     ...overrides,
   }
@@ -70,9 +73,12 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof BannerControls
     onRemoveProductImageSource: vi.fn(),
     onSelectProductImageSource: vi.fn(),
     onToggleSourceBgRemoved: vi.fn(),
+    onToggleShowOriginal: vi.fn(),
     hasBgRemovedLogo: false,
     showBgRemovedLogo: false,
     onToggleBgRemovedLogo: vi.fn(),
+    showOriginalLogo: false,
+    onToggleShowOriginalLogo: vi.fn(),
     showQuantitySticker: false,
     onQuantityStickerToggle: vi.fn(),
     quantityStickerText: null,
@@ -263,7 +269,7 @@ describe('BannerControls — logo bg-removed toggle', () => {
         })}
       />,
     )
-    fireEvent.click(screen.getByText('Original'))
+    fireEvent.click(screen.getByText('BG Removed'))
     expect(onToggle).toHaveBeenCalledTimes(1)
   })
 })

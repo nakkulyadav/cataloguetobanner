@@ -7,7 +7,14 @@ import { searchCatalog } from '@/services/apiService'
 import { parseApiItems } from '@/services/catalogueParser'
 import { parseDigihaatUrl } from '@/hooks/useDirectLookup'
 import { removeBackground } from '@/services/removeBackgroundService'
-import type { BannerState, BackgroundOption, ScheduledBannerEntry, SheetRow, ImageSource } from '@/types'
+import { enhanceImage } from '@/services/enhanceImageService'
+import { generateAiProductImage, resizeLogoToFit } from '@/services/imageGenerationService'
+import {
+  saveScheduledEntry,
+  loadScheduledEntry,
+  clearScheduledEntry,
+} from '@/services/persistenceService'
+import type { BannerState, BackgroundOption, ScheduledBannerEntry, SheetRow, ImageSource, PersistedScheduledEntry } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Default BannerState values — mirrors useBannerState initial state
@@ -42,6 +49,7 @@ function defaultBannerState(defaultBackground: BackgroundOption | null): Omit<Ba
     productImageScale: 1,
     quantityStickerText: null,
     showQuantitySticker: false,
+    showOriginalLogo: false,
   }
 }
 
@@ -86,6 +94,22 @@ export interface UseScheduledBannersReturn {
   removeEntryBackground: (id: string) => Promise<void>
   /** True while any removeEntryBackground call is actively processing */
   isRemovingBg: boolean
+  /**
+   * Generates an AI-enhanced product image and a resized logo for a single entry.
+   * Sets `aiGenStatus` to 'generating' → 'done' | 'error'.
+   */
+  generateEntryAiImages: (id: string) => Promise<void>
+  /**
+   * Clears the persisted state for a single entry and resets it in-memory to
+   * its freshly-parsed sheet state. Exposed for the "Reset entry" button.
+   */
+  clearEntryState: (id: string) => Promise<void>
+  /**
+   * Runs the full enhance + bg-removal pipeline for a single entry:
+   * enhance product image → remove product bg → enhance logo → remove logo bg.
+   * Updates enhanceStatus/enhanceStep on the entry while running.
+   */
+  enhanceEntry: (id: string) => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -110,13 +134,55 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
   const removeBgInProgressRef = useRef(false)
   const entriesRef = useRef<ScheduledBannerEntry[]>([])
 
+  // Keep track of the date currently loaded so clearEntryState can build the key.
+  const selectedDateRef = useRef('')
+
+  // -------------------------------------------------------------------------
+  // Persistence helpers (SS-9)
+  // -------------------------------------------------------------------------
+
+  /** Extracts the persisted subset from a full ScheduledBannerEntry. */
+  function extractPersistedFields(entry: ScheduledBannerEntry): PersistedScheduledEntry {
+    return {
+      bannerState: entry.bannerState,
+      bgRemovedLogoUrl: entry.bgRemovedLogoUrl,
+      showBgRemovedLogo: entry.showBgRemovedLogo,
+      bgRemovalStatus: entry.bgRemovalStatus,
+      aiGenStatus: entry.aiGenStatus,
+      enhanceStatus: entry.enhanceStatus,
+    }
+  }
+
+  /**
+   * Persists a single entry by its numeric index in the current entries list.
+   * Uses the index (not the entry.id) because the sheet row index is the stable
+   * key across page reloads — entry.id embeds the date but not the row offset.
+   */
+  function persistEntryByIndex(entry: ScheduledBannerEntry, rowIndex: number) {
+    void saveScheduledEntry(selectedDateRef.current, rowIndex, extractPersistedFields(entry))
+  }
+
   const syncedSetEntries = useCallback(
-    (updater: (prev: ScheduledBannerEntry[]) => ScheduledBannerEntry[]) => {
-      const next = updater(entriesRef.current)
+    (
+      updater: (prev: ScheduledBannerEntry[]) => ScheduledBannerEntry[],
+      /** When true, persist the changed entries to IndexedDB after the update. */
+      persist = false,
+    ) => {
+      const prev = entriesRef.current
+      const next = updater(prev)
       entriesRef.current = next
       setEntries(next)
+
+      // Persist only entries that actually changed (by reference comparison).
+      if (persist) {
+        next.forEach((entry, idx) => {
+          if (entry !== prev[idx] && entry.status === 'ready') {
+            persistEntryByIndex(entry, idx)
+          }
+        })
+      }
     },
-    [],
+    [], // eslint-disable-line react-hooks/exhaustive-deps — persistEntryByIndex is stable
   )
 
   const resolveEntry = useCallback(
@@ -184,10 +250,13 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
               id: 'catalogue',
               label: 'Catalogue',
               originalUrl: product.imageUrl,
+              enhancedUrl: null,
+              enhancementStatus: 'idle' as const,
               bgRemovedUrl: null,
-              bgRemovalStatus: 'idle',
+              bgRemovalStatus: 'idle' as const,
               showBgRemoved: false,
-              source: 'catalogue',
+              showOriginal: false,
+              source: 'catalogue' as const,
             }]
           : []
 
@@ -205,8 +274,8 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
                 sellingPrice: priceStr,
               }
             : null,
-          quantityStickerText: row.quantitySticker || null,
-          showQuantitySticker: !!row.quantitySticker,
+          quantityStickerText: null,
+          showQuantitySticker: false,
         }
 
         syncedSetEntries(prev =>
@@ -230,6 +299,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
   const setDate = useCallback(
     (date: string) => {
       setSelectedDate(date)
+      selectedDateRef.current = date
 
       controllerRef.current?.abort()
       const controller = new AbortController()
@@ -242,14 +312,10 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
       for (const entry of entriesRef.current) {
         if (entry.bannerState) {
           for (const source of entry.bannerState.productImageSources) {
-            if (source.bgRemovedUrl?.startsWith('blob:')) URL.revokeObjectURL(source.bgRemovedUrl)
             if (source.source === 'user' && source.originalUrl.startsWith('blob:')) {
               URL.revokeObjectURL(source.originalUrl)
             }
           }
-        }
-        if (entry.bgRemovedLogoUrl?.startsWith('blob:')) {
-          URL.revokeObjectURL(entry.bgRemovedLogoUrl)
         }
       }
 
@@ -272,7 +338,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
           const matchedRows = filterRowsForDate(allRows, sheetDate)
 
           if (matchedRows.length === 0) {
-            setFetchError(`No Bazar Page banners scheduled for ${sheetDate}`)
+            setFetchError(`No banners scheduled for ${sheetDate}`)
             setIsFetching(false)
             return
           }
@@ -287,6 +353,10 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
             bgRemovalError: null,
             bgRemovedLogoUrl: null,
             showBgRemovedLogo: true,
+            aiGenStatus: 'idle',
+            aiGenError: null,
+            enhanceStatus: 'idle',
+            enhanceStep: '',
           }))
 
           entriesRef.current = initialEntries
@@ -297,15 +367,31 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
             initialEntries.map(entry => resolveEntry(entry.sheetRow, entry.id, signal)),
           )
 
-          // Auto BG removal — process ready entries one at a time
+          // SS-10: restore persisted states — check IndexedDB for each resolved entry
+          // and merge saved data back in so manual edits, bg-removed URLs, and AI gen
+          // results are not lost when the same date is re-loaded.
           if (!signal.aborted) {
-            removeBgAbortRef.current = false
-            for (const entry of entriesRef.current) {
-              if (signal.aborted || removeBgAbortRef.current) break
-              if (entry.status === 'ready') {
-                await removeEntryBackground(entry.id)
-              }
-            }
+            const savedResults = await Promise.allSettled(
+              entriesRef.current.map((_, idx) => loadScheduledEntry(date, idx)),
+            )
+
+            syncedSetEntries(prev =>
+              prev.map((entry, idx) => {
+                const result = savedResults[idx]
+                if (result?.status !== 'fulfilled' || !result.value) return entry
+
+                const saved = result.value
+                return {
+                  ...entry,
+                  bannerState: saved.bannerState ?? entry.bannerState,
+                  bgRemovedLogoUrl: saved.bgRemovedLogoUrl,
+                  showBgRemovedLogo: saved.showBgRemovedLogo,
+                  bgRemovalStatus: saved.bgRemovalStatus,
+                  aiGenStatus: saved.aiGenStatus,
+                  enhanceStatus: saved.enhanceStatus ?? 'idle',
+                }
+              }),
+            )
           }
         } catch (err) {
           if (signal.aborted) return
@@ -323,6 +409,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
     (id: string, state: BannerState) => {
       syncedSetEntries(prev =>
         prev.map(e => (e.id === id ? { ...e, bannerState: state } : e)),
+        true, // persist after manual edit
       )
     },
     [syncedSetEntries],
@@ -332,6 +419,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
     (id: string) => {
       syncedSetEntries(prev =>
         prev.map(e => (e.id === id ? { ...e, showBgRemovedLogo: !e.showBgRemovedLogo } : e)),
+        true,
       )
     },
     [syncedSetEntries],
@@ -352,6 +440,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
             },
           }
         }),
+        true,
       )
     },
     [syncedSetEntries],
@@ -370,6 +459,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
             },
           }
         }),
+        true,
       )
     },
     [syncedSetEntries],
@@ -435,7 +525,7 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
       if (removeBgAbortRef.current) break
       try {
         const resultUrl = await removeBackground(source.originalUrl)
-        if (removeBgAbortRef.current) { URL.revokeObjectURL(resultUrl); break }
+        if (removeBgAbortRef.current) break
         syncedSetEntries(prev =>
           prev.map(e => {
             if (e.id !== id || !e.bannerState) return e
@@ -490,12 +580,9 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
         }
 
         syncedSetEntries(prev =>
-          prev.map(e => {
-            if (e.id !== id) return e
-            const oldLogoUrl = e.bgRemovedLogoUrl
-            if (oldLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(oldLogoUrl)
-            return { ...e, bgRemovedLogoUrl: logoResultUrl }
-          }),
+          prev.map(e =>
+            e.id === id ? { ...e, bgRemovedLogoUrl: logoResultUrl } : e,
+          ),
         )
       } catch (logoErr) {
         logoError = logoErr instanceof Error ? logoErr.message : String(logoErr)
@@ -512,11 +599,254 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
             }
           : e,
       ),
+      true, // persist completed bg-removal results
     )
 
     removeBgInProgressRef.current = false
     setIsRemovingBg(false)
   }, [syncedSetEntries]) // stable — reads state via entriesRef
+
+  const generateEntryAiImages = useCallback(async (id: string) => {
+    const entry = entriesRef.current.find(e => e.id === id)
+    if (!entry || entry.status !== 'ready' || !entry.bannerState) return
+
+    const { bannerState } = entry
+    const { selectedProduct } = bannerState
+    if (!selectedProduct) return
+
+    syncedSetEntries(prev =>
+      prev.map(e => e.id === id ? { ...e, aiGenStatus: 'generating' as const, aiGenError: null } : e),
+    )
+
+    try {
+      // Step 3 — Logo: resize to fit the brand logo box
+      const logoUrl =
+        entry.bgRemovedLogoUrl ??
+        bannerState.brandLogoOverride ??
+        selectedProduct.provider.brandLogo
+
+      if (logoUrl) {
+        const resizedDataUrl = await resizeLogoToFit(logoUrl)
+        syncedSetEntries(prev =>
+          prev.map(e => {
+            if (e.id !== id || !e.bannerState) return e
+            return {
+              ...e,
+              showBgRemovedLogo: false,
+              bannerState: { ...e.bannerState, brandLogoOverride: resizedDataUrl },
+            }
+          }),
+        )
+      }
+
+      // Step 4 — Product image: re-read entry after logo patch
+      const fresh = entriesRef.current.find(e => e.id === id)
+      if (!fresh?.bannerState) throw new Error('Entry state lost during AI generation')
+
+      const sourceUrl =
+        fresh.bannerState.productImageSources.find(s => s.source === 'catalogue')?.originalUrl ??
+        selectedProduct.imageUrl
+
+      if (!sourceUrl) throw new Error('No source image URL available for AI generation')
+
+      const { originalUrl, bgRemovedUrl } = await generateAiProductImage(
+        sourceUrl,
+        selectedProduct.name,
+        selectedProduct.shortDesc,
+        selectedProduct.provider.companyName,
+      )
+
+      const aiSource: ImageSource = {
+        id: 'ai-generated',
+        label: 'AI Generated',
+        originalUrl,
+        enhancedUrl: null,
+        enhancementStatus: 'idle',
+        bgRemovedUrl,
+        bgRemovalStatus: 'done',
+        showBgRemoved: true,
+        showOriginal: false,
+        source: 'ai',
+      }
+
+      syncedSetEntries(prev =>
+        prev.map(e => {
+          if (e.id !== id || !e.bannerState) return e
+          const sources = e.bannerState.productImageSources.filter(s => s.id !== 'ai-generated')
+          return {
+            ...e,
+            aiGenStatus: 'done' as const,
+            bannerState: {
+              ...e.bannerState,
+              productImageSources: [...sources, aiSource],
+              activeProductImageSourceId: 'ai-generated',
+            },
+          }
+        }),
+        true, // persist completed AI gen results
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[generateEntryAiImages] failed for entry', id, '—', message, err)
+      syncedSetEntries(prev =>
+        prev.map(e =>
+          e.id === id ? { ...e, aiGenStatus: 'error' as const, aiGenError: message } : e,
+        ),
+      )
+    }
+  }, [syncedSetEntries]) // stable — reads live state via entriesRef
+
+  /**
+   * Clears the persisted state for a single entry (SS-10) and resets it
+   * in-memory to its most recently resolved sheet state so the user can
+   * start fresh without bg-removed or AI-generated overrides.
+   */
+  const clearEntryState = useCallback(async (id: string) => {
+    const idx = entriesRef.current.findIndex(e => e.id === id)
+    if (idx === -1) return
+
+    await clearScheduledEntry(selectedDateRef.current, idx)
+
+    // Reset only the persisted overlay fields; leave bannerState intact so the
+    // product, heading, subheading etc. from the sheet are still visible.
+    syncedSetEntries(prev =>
+      prev.map(e =>
+        e.id === id
+          ? {
+              ...e,
+              bgRemovedLogoUrl: null,
+              showBgRemovedLogo: true,
+              bgRemovalStatus: 'idle' as const,
+              bgRemovalError: null,
+              aiGenStatus: 'idle' as const,
+              aiGenError: null,
+              enhanceStatus: 'idle' as const,
+              enhanceStep: '',
+              bannerState: e.bannerState
+                ? {
+                    ...e.bannerState,
+                    showOriginalLogo: false,
+                    productImageSources: e.bannerState.productImageSources
+                      .filter(s => s.source !== 'ai')
+                      .map(s => ({
+                        ...s,
+                        bgRemovedUrl: null,
+                        bgRemovalStatus: 'idle' as const,
+                        showBgRemoved: false,
+                        showOriginal: false,
+                      })),
+                  }
+                : null,
+            }
+          : e,
+      ),
+    )
+  }, [syncedSetEntries, clearScheduledEntry])
+
+  const enhanceEntry = useCallback(async (id: string) => {
+    const entry = entriesRef.current.find(e => e.id === id)
+    if (!entry || entry.status !== 'ready' || !entry.bannerState) return
+    if (entry.enhanceStatus === 'running') return
+
+    const setStep = (enhanceStep: string) =>
+      syncedSetEntries(prev => prev.map(e => e.id === id ? { ...e, enhanceStatus: 'running' as const, enhanceStep } : e))
+
+    setStep('Enhancing product image...')
+
+    try {
+      const { bannerState } = entry
+      const activeSource =
+        bannerState.productImageSources.find(s => s.id === bannerState.activeProductImageSourceId) ??
+        bannerState.productImageSources[0]
+
+      // Step 1: Enhance product image
+      let imageForBgRemoval = activeSource?.originalUrl ?? null
+      if (activeSource && activeSource.source !== 'ai') {
+        syncedSetEntries(prev => prev.map(e => {
+          if (e.id !== id || !e.bannerState) return e
+          return { ...e, bannerState: { ...e.bannerState, productImageSources: e.bannerState.productImageSources.map(s =>
+            s.id === activeSource.id ? { ...s, enhancementStatus: 'enhancing' as const } : s
+          )}}
+        }))
+        try {
+          const enhancedUrl = await enhanceImage(activeSource.originalUrl)
+          syncedSetEntries(prev => prev.map(e => {
+            if (e.id !== id || !e.bannerState) return e
+            return { ...e, bannerState: { ...e.bannerState, productImageSources: e.bannerState.productImageSources.map(s =>
+              s.id === activeSource.id ? { ...s, enhancedUrl, enhancementStatus: 'done' as const, showOriginal: false } : s
+            )}}
+          }))
+          imageForBgRemoval = enhancedUrl
+        } catch {
+          syncedSetEntries(prev => prev.map(e => {
+            if (e.id !== id || !e.bannerState) return e
+            return { ...e, bannerState: { ...e.bannerState, productImageSources: e.bannerState.productImageSources.map(s =>
+              s.id === activeSource.id ? { ...s, enhancementStatus: 'error' as const } : s
+            )}}
+          }))
+          // non-fatal: fall through to bg removal with original
+        }
+      }
+
+      // Step 2: Remove product image background
+      if (imageForBgRemoval) {
+        setStep('Removing background...')
+        syncedSetEntries(prev => prev.map(e => {
+          if (e.id !== id || !e.bannerState) return e
+          return { ...e, bgRemovalStatus: 'removing' as const, bannerState: { ...e.bannerState, productImageSources: e.bannerState.productImageSources.map(s =>
+            activeSource && s.id === activeSource.id ? { ...s, bgRemovalStatus: 'removing' as const } : s
+          )}}
+        }))
+        try {
+          const bgRemovedUrl = await removeBackground(imageForBgRemoval)
+          syncedSetEntries(prev => prev.map(e => {
+            if (e.id !== id || !e.bannerState) return e
+            return { ...e, bannerState: { ...e.bannerState, productImageSources: e.bannerState.productImageSources.map(s =>
+              activeSource && s.id === activeSource.id
+                ? { ...s, bgRemovedUrl, bgRemovalStatus: 'done' as const, showBgRemoved: true }
+                : s
+            )}}
+          }))
+        } catch (err) {
+          syncedSetEntries(prev => prev.map(e => {
+            if (e.id !== id || !e.bannerState) return e
+            return { ...e, bannerState: { ...e.bannerState, productImageSources: e.bannerState.productImageSources.map(s =>
+              activeSource && s.id === activeSource.id ? { ...s, bgRemovalStatus: 'error' as const } : s
+            )}}
+          }))
+          throw err
+        }
+      }
+
+      // Steps 3 & 4: Enhance logo then remove its background
+      const currentEntry = entriesRef.current.find(e => e.id === id)
+      const logoUrl =
+        currentEntry?.bannerState?.brandLogoOverride ??
+        currentEntry?.bannerState?.selectedProduct?.provider.brandLogo
+      if (logoUrl) {
+        let logoForBgRemoval = logoUrl
+        setStep('Enhancing logo...')
+        try {
+          logoForBgRemoval = await enhanceImage(logoUrl)
+        } catch {
+          // non-fatal: bg removal runs on original
+        }
+        setStep('Removing logo background...')
+        const bgRemovedLogoUrl = await removeBackground(logoForBgRemoval)
+        syncedSetEntries(prev => prev.map(e =>
+          e.id === id ? { ...e, bgRemovedLogoUrl, showBgRemovedLogo: true } : e
+        ))
+      }
+
+      syncedSetEntries(prev => prev.map(e =>
+        e.id === id ? { ...e, bgRemovalStatus: 'done' as const, bgRemovalError: null, enhanceStatus: 'done' as const, enhanceStep: '' } : e
+      ), true)
+    } catch {
+      syncedSetEntries(prev => prev.map(e =>
+        e.id === id ? { ...e, enhanceStatus: 'error' as const, enhanceStep: '' } : e
+      ))
+    }
+  }, [syncedSetEntries])
 
   return {
     selectedDate,
@@ -530,5 +860,8 @@ export function useScheduledBanners(defaultBackground: BackgroundOption | null =
     setEntryActiveSource,
     removeEntryBackground,
     isRemovingBg,
+    generateEntryAiImages,
+    clearEntryState,
+    enhanceEntry,
   }
 }

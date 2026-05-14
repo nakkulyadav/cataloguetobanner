@@ -8,13 +8,16 @@ interface ImageSourceListProps {
   /** Called only for 'user' sources */
   onRemove: (id: string) => void
   onToggleBgRemoved: (id: string) => void
+  /** Called when the user clicks the Enhanced/Original toggle. Only rendered when enhancedUrl is set. */
+  onToggleShowOriginal?: (id: string) => void
 }
 
 /**
  * Horizontal thumbnail strip of available product image sources.
  * Each chip shows the source image, a status indicator, and (for user sources)
  * a remove button. A BgVersionPill appears below the strip when the active
- * source has finished background removal.
+ * source has finished background removal; an Enhanced/Original toggle appears
+ * when the active source has an enhanced version available.
  */
 export default function ImageSourceList({
   sources,
@@ -22,6 +25,7 @@ export default function ImageSourceList({
   onSelect,
   onRemove,
   onToggleBgRemoved,
+  onToggleShowOriginal,
 }: ImageSourceListProps) {
   const activeSource = sources.find(s => s.id === activeSourceId)
 
@@ -45,6 +49,16 @@ export default function ImageSourceList({
         <BgVersionPill
           showBgRemoved={activeSource.showBgRemoved}
           onToggle={() => onToggleBgRemoved(activeSource.id)}
+        />
+      )}
+
+      {/* Enhanced/Original toggle — only when enhancement has completed for this source */}
+      {activeSource?.enhancedUrl !== null && activeSource?.enhancedUrl !== undefined && onToggleShowOriginal && (
+        <BgVersionPill
+          showBgRemoved={activeSource.showOriginal}
+          onToggle={() => onToggleShowOriginal(activeSource.id)}
+          labelA="Enhanced"
+          labelB="Original"
         />
       )}
     </div>

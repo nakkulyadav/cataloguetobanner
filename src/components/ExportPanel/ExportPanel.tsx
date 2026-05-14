@@ -18,13 +18,12 @@ export default function ExportPanel({ onExport, isExporting, disabled }: ExportP
       <button
         onClick={() => setModalOpen(true)}
         disabled={disabled || isExporting}
-        className={`w-full px-4 py-3 rounded-lg text-sm font-semibold transition-interaction cursor-pointer ${
-          disabled || isExporting
+        className={`w-full px-4 py-3 rounded-lg text-sm font-semibold transition-interaction cursor-pointer ${disabled || isExporting
             ? 'bg-[var(--surface-2)] text-[var(--text-disabled)] border border-[var(--border-subtle)] cursor-not-allowed'
             : 'bg-[var(--accent-base)] hover:bg-[var(--accent-hover)] text-white active:scale-[0.98]'
-        }`}
+          }`}
       >
-        {isExporting ? 'Exporting...' : 'Export Banner'}
+        {isExporting ? 'Exporting...' : 'Export to CMS'}
       </button>
 
       <ExportModal

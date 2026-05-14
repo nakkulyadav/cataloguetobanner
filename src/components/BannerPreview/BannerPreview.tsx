@@ -42,6 +42,9 @@ import {
 interface BannerPreviewProps {
   state: BannerState
   isRemovingBg?: boolean
+  enhanceJobStatus?: 'idle' | 'running' | 'done' | 'error'
+  enhanceJobStep?: string
+  onEnhance?: () => void
 }
 
 // --- Element identifiers for the dynamic layout system ---
@@ -80,7 +83,7 @@ function getGapBetween(a: ElementId, b: ElementId): number {
  *   Right → product image (bottom-aligned), offer badge (top-right flush)
  */
 const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
-  ({ state, isRemovingBg = false }, ref) => {
+  ({ state, isRemovingBg = false, enhanceJobStatus = 'idle', enhanceJobStep = '', onEnhance }, ref) => {
     const {
       selectedProduct,
       selectedBackground,
@@ -100,13 +103,14 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       priceOverride,
       productImageSources,
       activeProductImageSourceId,
+      logoImageSources,
+      activeLogoImageSourceId,
+      showOriginalLogo,
       logoScale,
       productImageScale,
       quantityStickerText,
       showQuantitySticker,
     } = state
-
-    const brandLogo = brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
 
     // Use the override if set, otherwise fall back to the catalogue name
     const displayName = productNameOverride ?? selectedProduct?.name
@@ -118,15 +122,25 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
     const activeSource = productImageSources.find(s => s.id === activeProductImageSourceId)
     const effectiveImageUrl: string | undefined =
       activeSource
-        ? (activeSource.showBgRemoved && activeSource.bgRemovedUrl)
-            ? activeSource.bgRemovedUrl
-            : activeSource.source === 'user'
-                ? activeSource.originalUrl
-                : selectedProduct?.imageUrl
+        ? activeSource.showOriginal
+            ? activeSource.originalUrl
+            : (activeSource.showBgRemoved && activeSource.bgRemovedUrl)
+                ? activeSource.bgRemovedUrl
+                : (activeSource.enhancedUrl ?? activeSource.originalUrl)
         : selectedProduct?.imageUrl
-    const hasValidImage = activeSource?.source === 'user'
+    const hasValidImage = (activeSource?.source === 'user' || activeSource?.source === 'ai')
       ? true
       : selectedProduct?.hasValidImage ?? false
+
+    // Derive effective logo URL from the active logo source
+    const activeLogoSource = logoImageSources.find(s => s.id === activeLogoImageSourceId)
+    const brandLogo: string | null = activeLogoSource
+      ? showOriginalLogo
+          ? activeLogoSource.originalUrl
+          : (activeLogoSource.showBgRemoved && activeLogoSource.bgRemovedUrl)
+              ? activeLogoSource.bgRemovedUrl
+              : (activeLogoSource.enhancedUrl ?? activeLogoSource.originalUrl)
+      : brandLogoOverride ?? selectedProduct?.provider.brandLogo ?? null
 
     // --- Heading config: normal vs compact ---
     // When subheading is active, heading shrinks to a fixed single-line compact mode.
@@ -176,30 +190,34 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         const maxHeight = maxLines * size * lh
         if (el.scrollHeight <= maxHeight + 1) {
           setHeadingFontSize(size)
-          setActualHeadingHeight(el.scrollHeight)
+          // +4: Devanagari ink (matras, nuktas) visually overflows the CSS line box;
+          // the extra pixels let that ink render instead of being clipped by overflow:hidden.
+          setActualHeadingHeight(el.scrollHeight + 4)
           return
         }
       }
       setHeadingFontSize(minSize)
-      // At min font size, cap at max allowed height
-      setActualHeadingHeight(Math.min(el.scrollHeight, maxLines * minSize * lh))
+      setActualHeadingHeight(Math.min(el.scrollHeight, maxLines * minSize * lh) + 4)
     }, [displayName, headingConfig])
 
     // Use the actual measured height for layout, not the theoretical max
     const headingHeight = actualHeadingHeight
 
-    // --- Adaptive height measurement for subheading (up to maxLines lines) ---
+    // --- Adaptive font sizing + height measurement for subheading ---
+    // Tries to fit on 1 line by shrinking from maxFontSize → minFontSize.
+    // Falls back to 2 lines at minFontSize if the text is still too long.
     const subheadingMeasureRef = useRef<HTMLDivElement>(null)
+    const [subheadingFontSize, setSubheadingFontSize] = useState(SUBHEADING_TEXT.maxFontSize)
     const [actualSubheadingHeight, setActualSubheadingHeight] = useState(SUBHEADING_TEXT_HEIGHT)
 
     useEffect(() => {
       const el = subheadingMeasureRef.current
       if (!el || !subheadingText) {
         setActualSubheadingHeight(SUBHEADING_TEXT_HEIGHT)
+        setSubheadingFontSize(SUBHEADING_TEXT.maxFontSize)
         return
       }
-      const { fontSize, fontWeight, fontFamily, lineHeight, maxLines } = SUBHEADING_TEXT
-      el.style.fontSize = `${fontSize}px`
+      const { maxFontSize, minFontSize, fontSizeStep, fontWeight, fontFamily, lineHeight, maxLines } = SUBHEADING_TEXT
       el.style.fontWeight = String(fontWeight)
       el.style.fontFamily = fontFamily
       el.style.lineHeight = `${lineHeight}`
@@ -208,9 +226,19 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
       el.style.whiteSpace = 'pre-line'
       el.textContent = subheadingText
 
-      // Cap at the maximum allowed height (maxLines × line height)
-      const maxH = maxLines * fontSize * lineHeight
-      setActualSubheadingHeight(Math.min(el.scrollHeight, maxH))
+      for (let size = maxFontSize; size >= minFontSize; size -= fontSizeStep) {
+        el.style.fontSize = `${size}px`
+        if (el.scrollHeight <= size * lineHeight + 1) {
+          setSubheadingFontSize(size)
+          setActualSubheadingHeight(el.scrollHeight + 4)
+          return
+        }
+      }
+
+      // Still wraps at minFontSize — allow up to maxLines at minFontSize
+      el.style.fontSize = `${minFontSize}px`
+      setSubheadingFontSize(minFontSize)
+      setActualSubheadingHeight(Math.min(el.scrollHeight, maxLines * minFontSize * lineHeight) + 4)
     }, [subheadingText])
 
     // --- Determine which elements are visible and their heights ---
@@ -355,6 +383,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
     const ctaTextColor = selectedBackground?.ctaTextColor ?? CTA_BUTTON.color
 
     return (
+      <>
       <div
         ref={ref}
         style={{
@@ -363,6 +392,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           position: 'relative',
           overflow: 'hidden',
           borderRadius: BANNER_RADIUS,
+          boxShadow: 'var(--shadow-deep)',
           fontFamily: PRODUCT_NAME.fontFamily,
           backgroundColor: BANNER_FALLBACK_BG,
         }}
@@ -450,7 +480,7 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
               top: positions.subheading,
               width: SUBHEADING.maxWidth,
               height: actualSubheadingHeight,
-              fontSize: SUBHEADING_TEXT.fontSize,
+              fontSize: subheadingFontSize,
               fontWeight: SUBHEADING_TEXT.fontWeight,
               color: SUBHEADING_TEXT.color,
               fontFamily: SUBHEADING_TEXT.fontFamily,
@@ -607,6 +637,39 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
           </>
         )}
 
+        {/* Enhance processing overlay — full banner, pointer-events-none */}
+        {enhanceJobStatus === 'running' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              pointerEvents: 'none',
+            }}
+          >
+            <div className="animate-spin" style={{ width: 28, height: 28, border: '3px solid white', borderTopColor: 'transparent', borderRadius: '50%' }} />
+            {enhanceJobStep && (
+              <span
+                style={{
+                  color: 'white',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textAlign: 'center',
+                  padding: '0 16px',
+                  lineHeight: 1.4,
+                }}
+              >
+                {enhanceJobStep}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Product Image (right half, bottom-aligned, centered at x=541.5) */}
         {hasValidImage && effectiveImageUrl && (
           <img
@@ -658,6 +721,36 @@ const BannerPreview = forwardRef<HTMLDivElement, BannerPreviewProps>(
         )}
 
       </div>
+
+      {/* Enhance button — hidden once the pipeline completes successfully */}
+      {enhanceJobStatus !== 'done' && (
+        <div style={{ width: BANNER_WIDTH }}>
+          <button
+            onClick={onEnhance}
+            disabled={enhanceJobStatus === 'running' || !onEnhance}
+            className={[
+              'w-full py-2 rounded-lg text-[12px] font-semibold transition-interaction active:scale-[0.98]',
+              enhanceJobStatus === 'running' || !onEnhance
+                ? 'bg-[var(--surface-2)] text-[var(--text-disabled)] cursor-not-allowed'
+                : enhanceJobStatus === 'error'
+                ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30 cursor-pointer'
+                : 'bg-[var(--accent-base)] text-white hover:bg-[var(--accent-hover)] cursor-pointer',
+            ].join(' ')}
+          >
+            {enhanceJobStatus === 'running'
+              ? (enhanceJobStep || 'Processing…')
+              : enhanceJobStatus === 'error'
+              ? 'Retry Enhance'
+              : 'Enhance'}
+          </button>
+          {enhanceJobStatus === 'error' && (
+            <p className="mt-1 text-[10px] text-red-400 text-center">
+              Something went wrong. Click Retry Enhance to try again.
+            </p>
+          )}
+        </div>
+      )}
+      </>
     )
   },
 )

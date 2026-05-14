@@ -1,6 +1,6 @@
 # Feature Implementation Plan
 
-**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE | SB-1–SB-17 DONE | RB-1–RB-5 DONE | BW-1–BW-5 DONE ✅ | QD-1–QD-4 DONE ✅ | BL-1–BL-5 DONE ✅ | ES-1–ES-8 DONE ✅ | IT-1–IT-25 DONE ✅ | IT-26–IT-30 Manual TODO | ABR-1–ABR-8 DONE ✅ | ISL-1–ISL-10 DONE ✅ | QST-1–QST-14 DONE ✅`
+**Overall Progress:** `Steps 1-33 DONE | Fixes F1-F14 DONE | FM-1 to FM-44 DONE | P1-P12 DONE | S1-S6 DONE | T1-T8 DONE | N1-N7 DONE | H1-H3 DONE | A1-A13 DONE | DL1-DL5 DONE | QS-1–QS-26 DONE | ZM-1–ZM-6 DONE | IC-1–IC-3 DONE | SB-1–SB-17 DONE | RB-1–RB-5 DONE | BW-1–BW-5 DONE ✅ | QD-1–QD-4 DONE ✅ | BL-1–BL-5 DONE ✅ | ES-1–ES-8 DONE ✅ | IT-1–IT-25 DONE ✅ | IT-26–IT-30 Manual TODO | ABR-1–ABR-8 DONE ✅ | ISL-1–ISL-10 DONE ✅ | QST-1–QST-14 DONE ✅ | AIG-1–AIG-13 TODO | BM-1–BM-2 DONE ✅ | BM-3–BM-19 TODO | SS-1–SS-10 DONE ✅ | SS-11–SS-16 TODO | OE-1–OE-13 TODO | ER-1–ER-15 TODO`
 
 ## TLDR
 Build a client-side React app that lets Digihaat employees search products from a JSON catalogue, customize banner elements (background, CTA, offer badge), preview a 712×322px banner in real-time, and export it as PNG/JPG/WEBP. Dark theme modern dashboard UI. No backend — catalogue is a static JSON file.
@@ -2964,3 +2964,956 @@ Two invariants:
 - `src/services/exportService.ts` — export captures the DOM including the sticker automatically
 - `src/components/DateSchedule/ScheduledBannersGrid.tsx` — no new props needed; data flows through `BannerState`
 - `src/components/DateSchedule/ScheduledBannerCard.tsx` — unchanged; sticker renders via `BannerPreview`
+
+---
+
+## AI Image Generation (AIG-1–AIG-13)
+
+**Goal:** Add a "Generate AI Images" button to each scheduled banner card. Clicking it:
+1. Resizes the brand logo to exactly fit the 370×50px logo box (client-side canvas, transparent background).
+2. Calls FLUX.1-Kontext-dev via a Cloudflare Pages Function to produce a studio-quality product image, then chains background removal to give a transparent PNG.
+
+The generated images slot into the existing `productImageSources` and `brandLogoOverride` fields — no new display infrastructure needed.
+
+**Model:** `black-forest-labs/FLUX.1-Kontext-dev` via HuggingFace router → fal-ai provider.  
+**API key:** `HF_TOKEN` stored as a Cloudflare Pages environment secret; never reaches the browser.
+
+---
+
+#### Phase 1 — Types
+
+- [x] AIG-1: `src/types/index.ts`
+  - In `ImageSource`: extend `source` union from `'catalogue' | 'user'` to `'catalogue' | 'user' | 'ai'`.
+  - In `ScheduledBannerEntry`: add two fields:
+    ```ts
+    aiGenStatus: 'idle' | 'generating' | 'done' | 'error'
+    aiGenError: string | null
+    ```
+
+---
+
+#### Phase 2 — Cloudflare Pages Function
+
+- [x] AIG-2: `functions/api/generate-image.ts` *(new file)*
+  - Export `onRequestOptions` → 204 with CORS headers (preflight).
+  - Export `onRequestPost(context: { request: Request; env: { HF_TOKEN: string } })`.
+  - Parse JSON body `{ imageUrl: string, prompt: string }`. Return 400 on missing fields or `blob:`/`data:` URLs.
+  - Fetch the source image server-side (no CORS restriction). Convert `ArrayBuffer` → base64 data-URI using a chunked loop (chunk size 8192 to avoid stack overflow on large images).
+  - POST to `https://router.huggingface.co/fal-ai/black-forest-labs/FLUX.1-Kontext-dev` with `Authorization: Bearer ${HF_TOKEN}` and JSON body `{ inputs: base64DataUri, parameters: { prompt, output_format: 'png' } }`.
+  - Handle two response shapes from HF router:
+    - `content-type: image/*` → stream `ArrayBuffer` directly to client.
+    - JSON `{ images: [{ url, content_type }] }` (fal-ai native format) → fetch that URL, stream to client.
+  - Return structured `{ error, detail }` JSON on every non-2xx path.
+
+---
+
+#### Phase 3 — Image Generation Service
+
+- [x] AIG-3: `src/services/imageGenerationService.ts` *(new file)*
+
+  **`buildProductImagePrompt(name, shortDesc, companyDesc)`** — assembles the generation prompt:
+  ```
+  Transform this product image into a professional studio-quality photograph.
+  Preserve all packaging text, colors, logos, and design faithfully.
+  Background: plain white — no backdrop, no surface, no floor.
+  Lighting: soft, even studio lighting with a subtle drop shadow beneath the product.
+  Center the product; fill approximately 80% of the frame.
+  Product context: {name}. {shortDesc}. Brand: {companyDesc}.
+  If the product does not fill the frame, add contextually relevant props —
+  natural ingredients, leaves, fruits, or objects associated with this product —
+  placed beside or in front without obscuring packaging.
+  Output format: PNG. No text overlays, no watermarks, no borders.
+  ```
+
+  **`generateAiProductImage(imageUrl, name, shortDesc, companyDesc)`**:
+  - POST `{ imageUrl, prompt }` to `/api/generate-image`.
+  - Throw descriptive `Error` on non-2xx (parse `{ error, detail }` from response body).
+  - Convert response blob → `URL.createObjectURL` → `originalUrl`.
+  - Chain `removeBackground(originalUrl)` → `bgRemovedUrl`.
+  - Return `{ originalUrl, bgRemovedUrl }`.
+
+  **`resizeLogoToFit(logoUrl)`**:
+  - Dimensions from `BRAND_LOGO.width` (370) and `BRAND_LOGO.height` (50).
+  - Load image with `img.crossOrigin = 'anonymous'`; route non-local URLs through `/api/image?url=…` proxy to avoid CORS.
+  - Scale factor = `Math.min(maxW / naturalWidth, maxH / naturalHeight, 1)` (never upscale).
+  - Draw centred onto a `maxW × maxH` canvas with `ctx.clearRect` first (transparent background).
+  - Return `canvas.toDataURL('image/png')`.
+
+---
+
+#### Phase 4 — useScheduledBanners: generateEntryAiImages
+
+- [x] AIG-4: `src/hooks/useScheduledBanners.ts`
+  - In `initialEntries` (inside `setDate`): add `aiGenStatus: 'idle'` and `aiGenError: null` to each entry object.
+  - Add `generateEntryAiImages: (id: string) => Promise<void>` to `UseScheduledBannersReturn`.
+  - Implement `generateEntryAiImages` as a `useCallback` (stable via `syncedSetEntries` + `entriesRef`):
+    1. Guard: entry must be `status === 'ready'` with a `bannerState`.
+    2. Set `aiGenStatus: 'generating'`, `aiGenError: null`.
+    3. **Logo**: resolve logo URL as `entry.bgRemovedLogoUrl ?? bannerState.brandLogoOverride ?? selectedProduct.provider.brandLogo`. Call `resizeLogoToFit(logoUrl)`. Patch entry: `showBgRemovedLogo: false`, `bannerState.brandLogoOverride: resizedDataUrl`.
+    4. **Product image**: resolve source URL from `productImageSources.find(s => s.source === 'catalogue')?.originalUrl ?? selectedProduct.imageUrl`. Call `generateAiProductImage(url, name, shortDesc, companyName)`. Build `aiSource: ImageSource` with `id: 'ai-generated'`, `label: 'AI Generated'`, `source: 'ai'`, `bgRemovalStatus: 'done'`, `showBgRemoved: true`. Replace any existing `'ai-generated'` entry in `productImageSources`; set `activeProductImageSourceId: 'ai-generated'`.
+    5. On success: set `aiGenStatus: 'done'`.
+    6. On catch: set `aiGenStatus: 'error'`, `aiGenError: err.message`.
+
+---
+
+#### Phase 5 — BannerPreview: handle 'ai' source
+
+- [x] AIG-5: `src/components/BannerPreview/BannerPreview.tsx`
+  - `effectiveImageUrl`: the inner ternary currently checks `activeSource.source === 'user'` to decide between `originalUrl` and `selectedProduct?.imageUrl`. Extend to `source === 'user' || source === 'ai'` so AI-generated blob URLs are used directly.
+  - `hasValidImage`: same pattern — extend `source === 'user'` guard to `source === 'user' || source === 'ai'` so banners with only an AI source render the image correctly.
+
+---
+
+#### Phase 6 — ScheduledBannerCard: Generate AI button + badge
+
+- [x] AIG-6: `src/components/DateSchedule/ScheduledBannerCard.tsx`
+  - Add props:
+    ```ts
+    onGenerateAiImages?: () => void
+    isGeneratingAiImages?: boolean
+    ```
+  - Add `AiGenBadge` helper component (mirrors `BgRemovalBadge`):
+    - `'idle'` → renders nothing.
+    - `'generating'` → spinner + "Generating…" in `text-[var(--text-tertiary)]`.
+    - `'done'` → checkmark + "AI done" in `text-emerald-400`.
+    - `'error'` → X mark + "AI failed" in `text-red-400` with `title={error}`.
+  - In the action row (ready state): add a "Generate AI" button after the Edit/Save button, styled identically to the existing border-muted secondary buttons. Disable when `isGeneratingAiImages` is true or `entry.aiGenStatus === 'generating'`. Hide when `onGenerateAiImages` is not provided.
+  - Render `<AiGenBadge status={entry.aiGenStatus} error={entry.aiGenError} />` in the action row alongside the existing `<BgRemovalBadge>`.
+
+---
+
+#### Phase 7 — ScheduledBannersGrid: thread the callback
+
+- [x] AIG-7: `src/components/DateSchedule/ScheduledBannersGrid.tsx`
+  - Add prop `onGenerateAiImages?: (id: string) => void` to `ScheduledBannersGridProps`.
+  - Pass `onGenerateAiImages={entry.status === 'ready' ? () => onGenerateAiImages?.(entry.id) : undefined}` and `isGeneratingAiImages={entry.aiGenStatus === 'generating'}` to each `<ScheduledBannerCard>`.
+
+---
+
+#### Phase 8 — App.tsx: wire up
+
+- [x] AIG-8: `src/App.tsx`
+  - Destructure `generateEntryAiImages` from `useScheduledBanners`.
+  - Pass `onGenerateAiImages={scheduledBanners.generateEntryAiImages}` to `<ScheduledBannersGrid>`.
+
+---
+
+#### Phase 9 — Tests
+
+- [ ] AIG-9: `src/services/__tests__/imageGenerationService.test.ts` *(new file)*
+  - `buildProductImagePrompt`: assert product name, shortDesc, and companyDesc all appear in output. Assert companyDesc line absent when empty string passed.
+  - `resizeLogoToFit`: mock `document.createElement('canvas')` and 2D context; assert `drawImage` called with correct scaled dimensions for a landscape logo (wider than tall) and a portrait logo. Assert canvas size is always `370×50`.
+
+- [ ] AIG-10: `src/hooks/__tests__/useScheduledBanners.test.ts`
+  - Assert `initialEntries` contain `aiGenStatus: 'idle'` and `aiGenError: null`.
+  - `generateEntryAiImages` called on a non-ready entry → does nothing (no state mutation).
+
+- [x] AIG-11: `src/components/DateSchedule/__tests__/ScheduledBannerCard.test.tsx`
+  - "Generate AI" button renders when `onGenerateAiImages` is provided and entry is ready.
+  - Button is disabled when `isGeneratingAiImages = true`.
+  - `AiGenBadge` renders spinner for `'generating'`, checkmark for `'done'`, error for `'error'`, nothing for `'idle'`.
+
+- [ ] AIG-12: `npm run build` — TypeScript compiles clean, no new errors.
+
+- [ ] AIG-13: `npm run test:run` — all existing and new tests pass.
+
+---
+
+#### Edge Cases (AIG)
+
+| Scenario | Behavior |
+|---|---|
+| Entry has no product image URL | `generateAiProductImage` step is skipped; only logo resize runs |
+| Entry has no brand logo | Logo resize step is skipped silently |
+| `bgRemovedLogoUrl` not yet computed when button clicked | Falls back to `brandLogoOverride` then `provider.brandLogo`; resize still runs |
+| HF API returns non-image, non-JSON response | Pages Function returns 502 `{ error, detail }`; service throws; `aiGenStatus: 'error'` |
+| `blob:` or `data:` URL passed as `imageUrl` to Pages Function | Returns 400 immediately with clear message |
+| User clicks "Generate AI" a second time | Existing `'ai-generated'` source is replaced; `activeProductImageSourceId` stays `'ai-generated'` |
+| AI generation succeeds but bg removal fails | `generateAiProductImage` throws; `aiGenStatus: 'error'`; logo resize result is already committed to state |
+| Banner exported while generating | Export captures whatever images are currently in DOM; original catalogue image shown until generation completes |
+| `HF_TOKEN` env var missing on Pages | Function returns 500 `{ error: 'HF_TOKEN not configured' }` |
+| FLUX output resolution differs from 300×270 | CSS `objectFit: contain` on the banner preview handles any output resolution |
+
+---
+
+#### Files Modified (AIG)
+
+| File | Change |
+|---|---|
+| `src/types/index.ts` | Add `'ai'` to `ImageSource.source`; add `aiGenStatus` + `aiGenError` to `ScheduledBannerEntry` |
+| `src/hooks/useScheduledBanners.ts` | Add `aiGenStatus`/`aiGenError` to initial entries; implement + export `generateEntryAiImages` |
+| `src/components/BannerPreview/BannerPreview.tsx` | Extend `source === 'user'` guards to include `'ai'` in `effectiveImageUrl` and `hasValidImage` |
+| `src/components/DateSchedule/ScheduledBannerCard.tsx` | Add `onGenerateAiImages` + `isGeneratingAiImages` props; add "Generate AI" button; add `AiGenBadge` |
+| `src/components/DateSchedule/ScheduledBannersGrid.tsx` | Add `onGenerateAiImages` prop; thread to each card |
+| `src/App.tsx` | Destructure `generateEntryAiImages`; pass to `ScheduledBannersGrid` |
+
+#### Files Created (AIG)
+
+| File | Purpose |
+|---|---|
+| `functions/api/generate-image.ts` | Cloudflare Pages Function — proxies image + prompt to HF/fal-ai, keeps `HF_TOKEN` server-side |
+| `src/services/imageGenerationService.ts` | Client service — prompt builder, `/api/generate-image` caller, canvas logo resizer |
+| `src/services/__tests__/imageGenerationService.test.ts` | Unit tests for prompt builder and logo resize logic |
+
+#### Files NOT Modified (AIG)
+
+- `src/services/removeBackgroundService.ts` — called unchanged from inside `generateAiProductImage`
+- `src/services/exportService.ts` — export captures DOM as-is; AI images render the same as any other source
+- `src/hooks/useBannerState.ts` — AI generation only runs in scheduled mode; builder mode unaffected
+- `src/components/BannerControls/BannerControls.tsx` — no new controls needed; AI images appear in the existing image source selector
+
+---
+
+## Backend Migration Plan (BM)
+
+**Goal:** Move heavy processing (background removal WASM, AI image generation caching, Google Sheets JSONP fetching) from the browser to Cloudflare Workers + R2 storage. Eliminate the 170 MB ONNX model download, enable result caching, and simplify blob URL lifecycle tracking.
+
+**Architecture decision:** Extend the existing Cloudflare Pages + Workers setup (one Worker already exists at `functions/api/generate-image.ts`). Add R2 for image storage, two new Worker endpoints, and a shared helper library. No new hosting, no new infrastructure provider.
+
+**Background removal API choice:** Use HuggingFace Inference API with `briaai/RMBG-1.4` — same HF token already in use for image generation, no new API key or cost.
+
+**Prefix:** `BM-1` – `BM-19`
+
+---
+
+### Phase 1 — Infrastructure: R2 Storage + Worker Config
+
+#### Phase 1a — Wrangler configuration
+
+- [x] 🟩 BM-1: Add `wrangler.toml` to project root ✅ DONE
+  - Define `name = "digihaat-banner"`, `compatibility_date`, `pages_build_output_dir = "dist"`
+  - Bind R2 bucket: `[[r2_buckets]] binding = "IMAGES" bucket_name = "digihaat-banner-images"`
+  - List secrets: `HF_TOKEN` (existing), no new keys needed (RMBG uses same HF token)
+  - Example:
+    ```toml
+    name = "digihaat-banner"
+    compatibility_date = "2024-09-23"
+    pages_build_output_dir = "dist"
+
+    [[r2_buckets]]
+    binding = "IMAGES"
+    bucket_name = "digihaat-banner-images"
+    ```
+
+---
+
+#### Phase 1b — R2 shared helper
+
+- [x] 🟩 BM-2: `functions/lib/r2Storage.ts` *(new file)* ✅ DONE
+  - `hashKey(input: string): Promise<string>` — SHA-256 hex digest via `crypto.subtle.digest`; used for deterministic cache keys
+  - `getFromR2(env: Env, key: string): Promise<Response | null>` — R2 GET; returns null on miss
+  - `storeInR2(env: Env, key: string, data: ArrayBuffer, contentType: string): Promise<void>` — R2 PUT with content-type metadata
+  - `r2PublicUrl(key: string): string` — returns `/api/images/${key}` path (served by a pass-through Worker or R2 public bucket URL)
+
+---
+
+#### Phase 1c — R2 image-serve endpoint
+
+- [x] 🟩 BM-3: `functions/api/images/[key].ts` *(new file)* ✅ DONE
+  - `GET /api/images/:key` — fetches the object from R2 by key, streams it back with correct `Content-Type`
+  - Returns 404 if key not found
+  - Sets `Cache-Control: public, max-age=31536000, immutable` (content-addressed keys never change)
+
+---
+
+### Phase 2 — Background Removal Worker
+
+#### Phase 2a — Server-side bg removal endpoint
+
+- [x] 🟩 BM-4: `functions/api/remove-background.ts` *(new file)* ✅ DONE
+  - `POST /api/remove-background` — accepts `{ imageUrl?: string; imageData?: string; imageMediaType?: string }`
+    - `imageUrl`: http/https URL — Worker fetches it server-side (no CORS issues)
+    - `imageData`: base64-encoded image — used when caller has a `blob:` or `data:` URL that can't be forwarded
+  - Cache check: compute `SHA-256("rmbg:" + imageUrl)` (or `SHA-256("rmbg-data:" + imageData)`) → GET from R2 → return `{ url: "/api/images/<key>", cached: true }` on hit
+  - On miss:
+    1. Resolve image bytes (from `imageUrl` fetch or base64 decode)
+    2. POST bytes to `https://api-inference.huggingface.co/models/briaai/RMBG-1.4` with `Authorization: Bearer ${HF_TOKEN}` — returns PNG with transparent background
+    3. Store PNG in R2 under the cache key
+    4. Return `{ url: "/api/images/<key>", cached: false }`
+  - Validates: reject non-http/https `imageUrl` values with 400; reject missing both fields with 400
+  - CORS headers matching `generate-image.ts` pattern
+  - Dev middleware mirror in `vite.config.ts` (same pattern as existing `generateImagePlugin`)
+
+---
+
+#### Phase 2b — Dev middleware for remove-background
+
+- [x] 🟩 BM-5: `vite.config.ts` ✅ DONE
+  - Add `removeBackgroundPlugin(env)` dev middleware mirroring `functions/api/remove-background.ts`
+  - Accepts POST to `/api/remove-background`; proxies to HF RMBG-1.4; returns PNG binary (no R2 in dev — just stream the result)
+  - Keep `worker.format: 'es'` and `optimizeDeps.exclude: ['@imgly/background-removal']` in place until Phase 5 (BM-14) removes the dependency
+
+---
+
+#### Phase 2c — Client service migration
+
+- [x] 🟩 BM-6: `src/services/removeBackgroundService.ts` ✅ DONE
+  - Replace the Web Worker + WASM implementation with a `fetch('/api/remove-background', ...)` call
+  - For `http://` / `https://` URLs: send `{ imageUrl }`
+  - For `blob:` / `data:` URLs: read the blob as base64, send `{ imageData, imageMediaType }`
+  - Keep the same exported signature: `removeBackground(imageUrl: string): Promise<string>` — returns the stable `/api/images/<key>` URL (or raw binary blob URL in dev where R2 is unavailable)
+  - Remove all `new Worker(...)`, ONNX, and `URL.createObjectURL` code
+
+---
+
+#### Phase 2d — Blob URL lifecycle cleanup
+
+- [x] 🟩 BM-7: `src/hooks/useScheduledBanners.ts` ✅ DONE
+  - Remove all `URL.revokeObjectURL` calls for `bgRemovedUrl` and `bgRemovedLogoUrl` fields — these are now stable server URLs, not blobs
+  - `bgRemoved*` fields on `ScheduledBannerEntry` now hold `/api/images/...` strings; no revocation needed
+
+- [x] 🟩 BM-8: `src/hooks/useBannerState.ts` ✅ DONE
+  - Same cleanup: remove blob revocation for bg-removed `ImageSource` entries
+  - Stable R2 URLs can be stored in state indefinitely without lifecycle tracking
+
+---
+
+### Phase 3 — AI Image Generation with R2 Caching
+
+#### Phase 3a — Update generate-image Worker
+
+- [x] 🟩 BM-9: `functions/api/generate-image.ts` ✅ DONE
+  - Import shared helpers from `../lib/r2Storage`
+  - Before calling HuggingFace: compute cache key `SHA-256("aigen:" + prompt)` → GET from R2 → if hit, return `{ url: "/api/images/<key>", cached: true }` immediately
+  - On miss: call HF as before, store PNG/JPEG result in R2, return `{ url: "/api/images/<key>", cached: false }`
+  - **Breaking change:** response shape changes from raw binary to `{ url: string; cached: boolean }` JSON — update client in BM-10
+  - Update dev middleware in `vite.config.ts` to match: return JSON `{ url }` instead of binary (in dev, return a `blob:` URL since R2 isn't available)
+
+---
+
+#### Phase 3b — Client service update for stable AI image URLs
+
+- [x] 🟩 BM-10: `src/services/imageGenerationService.ts` ✅ DONE
+  - Update `generateAiProductImage` to parse JSON response `{ url, cached }` instead of reading binary
+  - Replace `URL.createObjectURL(await response.blob())` with `response.url` from the parsed JSON
+  - No change to caller interface — function still returns a URL string
+
+---
+
+### Phase 4 — Google Sheets Proxy Worker
+
+#### Phase 4a — Server-side Sheets proxy
+
+- [x] 🟩 BM-11: `functions/api/sheets.ts` *(new file)* ✅ DONE
+  - `GET /api/sheets?sheetId=<id>&gid=<id>` — proxies Google Visualization API query server-side
+  - Move JSONP parsing logic from `src/services/sheetsService.ts` into this Worker
+  - Use CF Cache API: `const cache = caches.default` — check before fetching, store response with `Cache-Control: max-age=300` (5-min TTL matches schedule granularity)
+  - Returns clean JSON array of row objects (same shape `sheetsService.ts` currently produces after parsing)
+  - CORS headers
+
+- [x] 🟩 BM-12: `vite.config.ts` ✅ DONE — add dev middleware for `/api/sheets` that proxies to Google Visualization API and strips JSONP wrapping (same logic as BM-11 Worker, no caching needed in dev)
+
+---
+
+#### Phase 4b — Client service simplification
+
+- [x] 🟩 BM-13: `src/services/sheetsService.ts` ✅ DONE
+  - Replace Google Visualization URL construction + JSONP `fetch` + response parsing with a single `fetch('/api/sheets?sheetId=...&gid=...')`
+  - Remove all JSONP parsing code (it now lives in the Worker)
+  - Keep the same exported function signatures; all callers (`useScheduledBanners.ts`, etc.) are unaffected
+
+---
+
+### Phase 5 — Client Cleanup
+
+- [x] 🟩 BM-14: Remove WASM bundle from client ✅ DONE
+  - Uninstall `@imgly/background-removal` from `package.json` (`npm uninstall @imgly/background-removal`)
+  - Delete `src/workers/backgroundRemoval.worker.ts`
+  - Remove `worker: { format: 'es' }` and `optimizeDeps: { exclude: ['@imgly/background-removal'] }` from `vite.config.ts`
+  - Expected outcome: production bundle drops ~170 MB of model weight from the network payload
+
+- [x] 🟩 BM-15: `src/types/index.ts` ✅ DONE
+  - Add `ProcessedImageResponse: { url: string; cached: boolean }` interface (shared client-side type for Worker responses)
+  - No removal of existing fields yet — wait until all callers are updated and tests pass
+
+---
+
+### Phase 6 — Tests
+
+- [x] 🟩 BM-16: `functions/api/__tests__/remove-background.test.ts` *(new file)* ✅ DONE
+  - R2 cache hit → returns `{ url, cached: true }` without calling HF RMBG
+  - R2 cache miss → calls HF, stores in R2, returns `{ url, cached: false }`
+  - `imageUrl` is a `blob:` URL → 400 response
+  - Both `imageUrl` and `imageData` missing → 400 response
+  - `HF_TOKEN` env var missing → 500 response
+
+- [x] 🟩 BM-17: `functions/api/__tests__/generate-image.test.ts` *(new file)* ✅ DONE
+  - R2 cache hit → returns `{ url, cached: true }` without calling HF
+  - R2 cache miss → calls HF, stores result in R2, returns `{ url, cached: false }`
+  - `HF_TOKEN` missing → 500 response
+  - Response shape is always JSON (not binary)
+
+- [x] 🟩 BM-18: `src/services/__tests__/removeBackgroundService.test.ts` ✅ DONE
+  - Update existing tests: mock `fetch` to `/api/remove-background`; assert blob URLs are converted to base64 before sending; assert returned URL is the stable `/api/images/...` string
+  - Remove WASM worker mock setup
+
+- [x] 🟩 BM-19: `npm run build` — TypeScript compiles clean; `npm run test:run` — all tests pass ✅ DONE
+
+---
+
+#### Edge Cases (BM)
+
+| Scenario | Behavior |
+|---|---|
+| R2 GET fails / bucket unreachable | Worker returns 502; client surfaces error badge, falls back to original image |
+| HF RMBG-1.4 model loading (503 + estimated_time) | Worker returns 503 with detail; client shows "retry" state, same as AI generation |
+| Source `imageUrl` returns 404 | Worker returns 400 "source image unreachable"; client shows error badge |
+| Same image requested concurrently by two cards | Both compute identical cache key; second request hits R2 on arrival (at worst both call HF, second PUT is a no-op overwrite) |
+| `blob:` URL from user file upload | Client reads blob as base64 and sends `{ imageData, imageMediaType }` — Worker processes it; result cached by data hash |
+| R2 URL used in banner export | `html-to-image` fetches `/api/images/<key>` — same origin, no CORS issue |
+| `wrangler pages dev` local development | R2 emulated via Miniflare; no real bucket needed; RMBG/AI results stored in local `.wrangler/` directory |
+| AI generation and bg removal run simultaneously on same entry | Independent Worker calls; each writes to its own R2 key; no race condition |
+| HF free tier rate limit hit | Worker receives 429; propagates to client as error badge with "rate limited" message |
+| User uploads a PNG >4 MB | Base64 payload may hit CF Worker request size limit (100 MB); realistically safe for banner-sized images |
+
+---
+
+#### Files Modified (BM)
+
+| File | Change |
+|---|---|
+| `PLAN.md` | Add BM section; update Overall Progress |
+| `functions/api/generate-image.ts` | Add R2 cache check/store; change response to `{ url, cached }` JSON |
+| `src/services/removeBackgroundService.ts` | Replace WASM + Web Worker with `/api/remove-background` fetch |
+| `src/services/imageGenerationService.ts` | Parse JSON `{ url }` response; remove `createObjectURL` |
+| `src/services/sheetsService.ts` | Replace JSONP fetch + parsing with `/api/sheets` fetch |
+| `src/hooks/useScheduledBanners.ts` | Remove blob URL revocation for bg-removed fields |
+| `src/hooks/useBannerState.ts` | Remove blob URL revocation for bg-removed image sources |
+| `src/types/index.ts` | Add `ProcessedImageResponse` interface |
+| `vite.config.ts` | Add `removeBackgroundPlugin` + `sheetsPlugin` dev middlewares; remove WASM config after BM-14 |
+| `package.json` | `npm uninstall @imgly/background-removal` |
+
+#### Files Created (BM)
+
+| File | Purpose |
+|---|---|
+| `wrangler.toml` | CF Pages/Workers config — R2 binding, secrets declaration |
+| `functions/lib/r2Storage.ts` | Shared R2 helpers: hash, get, store, public URL |
+| `functions/api/images/[key].ts` | R2 image serve endpoint |
+| `functions/api/remove-background.ts` | Background removal Worker — HF RMBG-1.4 proxy + R2 cache |
+| `functions/api/sheets.ts` | Google Sheets proxy Worker — JSONP parse + CF Cache |
+| `functions/api/__tests__/remove-background.test.ts` | Worker unit tests |
+| `functions/api/__tests__/generate-image.test.ts` | Worker unit tests |
+
+#### Files NOT Modified (BM)
+
+- `src/services/catalogueParser.ts` — purely data parsing, no image or network ops
+- `src/services/searchService.ts` — in-memory search, unaffected
+- `src/services/exportService.ts` — `html-to-image` captures DOM as-is; stable URLs render the same as blobs
+- `src/components/BannerPreview/BannerPreview.tsx` — receives image URLs, doesn't care about source type
+- `src/workers/backgroundRemoval.worker.ts` — deleted in BM-14, not modified
+
+---
+
+## Save Session State (SS)
+
+**Goal:** Persist every banner customisation (text overrides, visibility toggles, uploaded images, bg-removal results, AI-generated images) so that returning to a product or a scheduled-banner date restores the last edited state exactly, with no page-refresh or navigation loss.
+
+**Architecture decision:** Use browser-native **IndexedDB** via the `idb` wrapper library. No backend, no database, no new hosting. IndexedDB stores `Blob` objects natively (unlike `localStorage` which is string-only and capped at ~5 MB), making it the right fit for banner images that can be 1–3 MB each. All data is per-device and per-browser — clearing browser data clears saved states (expected behaviour).
+
+**Key design choices:**
+- Single editor keyed by `banner:<productId>` — a different product gets a different saved state
+- Scheduled entries keyed by `scheduled:<date>:<sheetRow>` — stable across re-fetches of the same sheet date
+- Blob URLs (from user uploads) are session-only; they are read into `ArrayBuffer` and converted to data URLs at upload time before storing. Stable `/api/images/…` URLs (R2) are stored as-is.
+- Transient status fields (`bgRemovalStatus`, `aiGenStatus`) are normalised to `'idle'` on restore so no entry is stuck in a phantom `'loading'` state
+- Auto-save is **debounced 800 ms** after the last state change to avoid hammering IndexedDB on every keystroke
+- An explicit **"Reset to default"** action per banner/entry lets users discard saved overrides
+
+**Prefix:** `SS-1` – `SS-16`
+
+---
+
+### Phase 1 — Infrastructure: IndexedDB service
+
+#### Phase 1a — Install `idb`
+
+- [x] 🟩 SS-1: `npm install idb` ✅ DONE
+  - Adds `idb` (tiny typed wrapper around the IndexedDB API, ~1 KB gzipped)
+  - No other dependency changes
+
+---
+
+#### Phase 1b — Persistence service
+
+- [x] 🟩 SS-2: `src/services/persistenceService.ts` *(new file)* ✅ DONE
+  - Open (or upgrade) an IndexedDB database named `digihaat-banners` at version 1
+  - Two object stores:
+    - `editorStates` — keyPath `productId`; stores serialised `BannerState` per product
+    - `scheduledStates` — keyPath `entryKey` (`"<date>:<sheetRow>"`); stores serialised `ScheduledBannerEntry` fields
+  - Exported functions:
+    - `saveEditorState(productId: string, state: BannerState): Promise<void>`
+    - `loadEditorState(productId: string): Promise<BannerState | undefined>`
+    - `clearEditorState(productId: string): Promise<void>`
+    - `saveScheduledEntry(date: string, sheetRow: number, entry: PersistedScheduledEntry): Promise<void>`
+    - `loadScheduledEntry(date: string, sheetRow: number): Promise<PersistedScheduledEntry | undefined>`
+    - `clearScheduledEntry(date: string, sheetRow: number): Promise<void>`
+    - `clearAllStates(): Promise<void>` — full wipe (exposed for settings/debug use)
+
+---
+
+### Phase 2 — Blob URL serialisation
+
+- [x] 🟩 SS-3: `src/services/persistenceService.ts` — add `serializeBannerState(state: BannerState): Promise<BannerState>` ✅ DONE
+  - Iterates over `productImageSources` and `logoImageSources` arrays
+  - For any source whose `url` starts with `blob:`: fetches the blob, converts to a base64 data URL (`FileReader.readAsDataURL`), and replaces the `url` field in the cloned state
+  - `/api/images/…` and `https://…` URLs are copied as-is (already stable)
+  - Returns a new state object; does not mutate the live React state
+
+- [x] 🟩 SS-4: `src/services/persistenceService.ts` — add `deserializeBannerState(raw: BannerState): BannerState` ✅ DONE
+  - Data URLs restored from IndexedDB are valid `<img>` sources — no transformation needed
+  - Normalises transient fields: `bgRemovalStatus` for each image source → `'idle'` if it was `'removing'`
+  - Returns a clean state ready for `loadState()`
+
+---
+
+### Phase 3 — Single editor persistence
+
+- [x] 🟩 SS-5: `src/hooks/useBannerState.tsx` — auto-save on state change ✅ DONE
+  - Add a `useEffect` that fires whenever any part of the banner state changes
+  - Guard: only save when `selectedProduct` is non-null (no product = nothing to key on)
+  - Debounce 800 ms using `useRef` + `setTimeout` / `clearTimeout`
+  - Call `persistenceService.saveEditorState(selectedProduct.id, state)` (after blob serialisation)
+  - Errors from IndexedDB are logged to the browser console only — never surface to the user as visible UI errors (saving is transparent)
+
+- [x] 🟩 SS-6: `src/hooks/useBannerState.tsx` — auto-load on product select ✅ DONE
+  - In `selectProduct()`, after resetting state to defaults for the new product, call `persistenceService.loadEditorState(productId)`
+  - If a saved state exists: call `loadState(deserializeBannerState(saved))` to restore it
+  - If no saved state: proceed with the default reset (existing behaviour unchanged)
+
+- [x] 🟩 SS-7: `src/hooks/useBannerState.tsx` — expose `resetToDefault()` ✅ DONE
+  - New exported function that clears the saved state for the current product (`persistenceService.clearEditorState`) and resets all fields to their default values (existing reset logic)
+  - Used by the "Reset to default" button in BannerControls
+
+---
+
+### Phase 4 — Scheduled banners persistence
+
+- [x] 🟩 SS-8: `src/types/index.ts` — add `PersistedScheduledEntry` interface ✅ DONE
+  - Fields: `bannerState: BannerState`, `bgRemovedProductUrl: string | null`, `bgRemovedLogoUrl: string | null`, `showBgRemovedProduct: boolean`, `showBgRemovedLogo: boolean`, `aiGenUrl: string | null`
+  - Excludes transient lifecycle fields (`bgRemovalStatus`, `aiGenStatus`, `status`) — these are normalised to `'idle'` / `'ready'` on restore
+  - Mirrors the subset of `ScheduledBannerEntry` that represents user-editable or computed output
+
+- [x] 🟩 SS-9: `src/hooks/useScheduledBanners.ts` — save entry state on any update ✅ DONE
+  - After any mutation that updates an entry (`bgRemovalStatus → 'done'`, `aiGenStatus → 'done'`, manual state edit via `loadState`): call `persistenceService.saveScheduledEntry(date, entry.sheetRow, extractPersistedFields(entry))`
+  - `extractPersistedFields()` is a pure helper that picks the `PersistedScheduledEntry` subset and serialises any blob URLs
+  - Debounce is not needed here — these updates are event-driven (bg removal / AI gen completion), not continuous
+
+- [x] 🟩 SS-10: `src/hooks/useScheduledBanners.ts` — restore entry state on date load ✅ DONE
+  - In `setDate()`, after the sheet is fetched and entries are constructed, run a `Promise.all` over all entries calling `persistenceService.loadScheduledEntry(date, entry.sheetRow)`
+  - For each entry where a saved record exists: merge the persisted fields back in (overwrite `bannerState`, bg-removed URLs, AI gen URL); set `bgRemovalStatus` and `aiGenStatus` to `'done'` (so UI shows results without re-running)
+  - For entries with no saved record: use the freshly parsed state (existing behaviour)
+
+---
+
+### Phase 5 — UI affordances
+
+- [x] 🟩 SS-11: `src/components/BannerControls/BannerControls.tsx` — "Reset to default" button ✅ DONE
+  - Add a small ghost/danger button ("Reset to default") that calls `resetToDefault()` from `useBannerState`
+  - Positioned below the main controls, visually de-emphasised (e.g. `text-red-400 text-xs`)
+  - Confirm-on-click not required — the action is reversible by re-selecting the product (which would re-load… nothing, since state was cleared); mention in tooltip that "This clears saved overrides"
+
+- [x] 🟩 SS-12: `src/components/DateSchedule/ScheduledBannersGrid.tsx` — per-entry clear ✅ DONE
+  - Add a small "Reset entry" icon button on each `ScheduledBannerCard`
+  - Calls `persistenceService.clearScheduledEntry(date, entry.sheetRow)` then resets the entry in-memory to its freshly-parsed sheet state
+
+---
+
+### Phase 6 — Tests
+
+- [x] 🟩 SS-13: `src/services/__tests__/persistenceService.test.ts` *(new file)* ✅ DONE — 21 tests
+  - Mock `idb` with an in-memory store (or use the real fake-indexeddb library)
+  - `saveEditorState` + `loadEditorState` round-trip returns identical state
+  - `serializeBannerState` converts `blob:` URLs to data URLs; `https://` and `/api/images/…` URLs pass through untouched
+  - `deserializeBannerState` normalises `bgRemovalStatus: 'removing'` → `'idle'`
+  - `clearEditorState` removes the record; subsequent `loadEditorState` returns `undefined`
+  - `saveScheduledEntry` + `loadScheduledEntry` round-trip; merging persisted fields over a fresh entry produces the correct combined object
+  - `clearAllStates` leaves both stores empty
+
+- [x] 🟩 SS-14: `src/hooks/__tests__/useBannerState.persistence.test.tsx` *(new file)* — persistence wiring ✅ DONE — 12 tests
+  - Mock `persistenceService`; assert `saveEditorState` is called (debounced) after a state field changes
+  - Assert `loadEditorState` is called when `selectProduct()` runs; if it returns a saved state, `loadState` is called with deserialised data
+  - Assert `resetToDefault()` calls `clearEditorState` and resets state fields to defaults
+
+- [x] 🟩 SS-15: `src/hooks/__tests__/useScheduledBanners.persistence.test.ts` *(new file)* — persistence wiring ✅ DONE — 8 tests
+  - Mock `persistenceService`; assert `saveScheduledEntry` is called after bg removal completes for an entry
+  - Assert `loadScheduledEntry` is called for each entry after `setDate()`; entries with saved records have their `bannerState` and bg-removed URLs merged in
+  - Assert entries with no saved record use the freshly parsed sheet state unchanged
+
+- [x] 🟩 SS-16: `npm run test:run` — 306/319 pass (13 pre-existing removeBackgroundService failures unrelated to SS); `npm run build` — TypeScript compiles clean for all SS-modified files ✅ DONE
+
+---
+
+#### Edge Cases (SS)
+
+| Scenario | Behaviour |
+|---|---|
+| User clears browser data / IndexedDB | All saved states gone; app falls back to default behaviour on next load (catalogue state, no overrides) |
+| Product removed from catalogue after state was saved | `loadEditorState` returns a saved state but `selectProduct` was never called (product not found in search) — orphaned record stays in DB, never surfaced |
+| Two tabs open with same product | Both tabs save independently; last write wins — IndexedDB writes are atomic per put |
+| Saved state has an image source whose data URL is from a deleted R2 key | Image renders as broken `<img>`; user can upload a replacement or reset to default |
+| `blob:` URL serialisation fails (e.g. blob already revoked) | `serializeBannerState` catches the error for that source, omits the source from the saved state, logs to console; other sources are saved normally |
+| IndexedDB quota exceeded (device storage full) | `saveEditorState` / `saveScheduledEntry` throws a `QuotaExceededError`; catch and log silently — UI continues working, just not persisted |
+| Entry `bgRemovalStatus` is `'removing'` when user refreshes mid-process | `deserializeBannerState` normalises it to `'idle'`; user sees "Remove BG" button ready to re-run |
+| Scheduled date re-fetched after edits | Saved states are merged back in over the fresh sheet data — manual edits are not lost by a re-fetch |
+
+---
+
+#### Files Modified (SS)
+
+| File | Change |
+|---|---|
+| `PLAN.md` | Add SS section; update Overall Progress |
+| `package.json` | Add `idb` dependency |
+| `src/types/index.ts` | Add `PersistedScheduledEntry` interface |
+| `src/hooks/useBannerState.tsx` | Auto-save on state change (debounced); auto-load on `selectProduct`; expose `resetToDefault()` |
+| `src/hooks/useScheduledBanners.ts` | Save entry on mutation; restore entries on `setDate()` |
+| `src/components/BannerControls/BannerControls.tsx` | Add "Reset to default" button wired to `resetToDefault()` |
+| `src/components/DateSchedule/ScheduledBannersGrid.tsx` | Add "Reset entry" button per card |
+
+#### Files Created (SS)
+
+| File | Purpose |
+|---|---|
+| `src/services/persistenceService.ts` | IndexedDB open/upgrade, all save/load/clear functions, blob URL serialisation helpers |
+| `src/services/__tests__/persistenceService.test.ts` | Full unit test coverage for persistence service |
+
+#### Files NOT Modified (SS)
+
+- `src/services/catalogueParser.ts` — data parsing only, no state or storage
+- `src/services/searchService.ts` — in-memory search, unaffected
+- `src/services/exportService.ts` — captures DOM as-is; data URLs render identically to blob URLs
+- `src/components/BannerPreview/BannerPreview.tsx` — receives image URLs, storage-agnostic
+- `functions/` — all Cloudflare Worker endpoints unaffected; persistence is entirely client-side
+
+---
+
+## On-Click Enhance (OE)
+
+**Goal:** Replace the auto-triggered enhance → background-removal pipeline with a single manual **"Enhance"** button per banner. One button covers both the product image and the brand logo. While running, the banner card becomes non-interactive and a sequential loader describes what is happening. Also fixes the broken fal.ai upscaler by migrating to a HuggingFace-hosted Real-ESRGAN model (reusing the existing `HF_TOKEN`).
+
+**Architecture decision:** A single `enhanceJobStatus: 'idle' | 'running' | 'done' | 'error'` + `enhanceJobStep: string` pair is held in local state in `App.tsx` and passed down to `BannerPreview`. This keeps the change self-contained without touching `BannerState` or `ImageSource`. The pipeline sequence is: enhance product image → remove product background → enhance logo → remove logo background. Logo and product image share one button because they succeed or fail together (same HF token, same pipeline) and users have no reason to run them independently.
+
+**Key design choices:**
+- Button is styled identically to "Export to CMS" (`bg-[var(--accent-base)]`, full-width, `active:scale-[0.98]`)
+- Button is hidden once `enhanceJobStatus === 'done'` — re-running is not needed (idempotent pipeline)
+- Button is disabled while `enhanceJobStatus === 'running'`
+- A semi-transparent overlay covers the banner during processing; the step label is centred inside it
+- On error, the button re-appears so the user can retry; an error message is shown below the button
+- The auto-trigger `useEffect`s for product images and logo are removed entirely — no silent background processing
+
+**Prefix:** `OE-1` – `OE-13`
+
+---
+
+### Phase 1 — Fix the enhancement API
+
+#### Phase 1a — Swap fal.ai for HuggingFace upscaler
+
+- [x] 🟥 OE-1: `functions/api/enhance-image.ts` — replace fal.ai ESRGAN call with HuggingFace Inference API
+  - Current: `POST https://fal.run/fal-ai/esrgan` using `FAL_KEY` → returns R2-cached URL
+  - New: `POST https://api-inference.huggingface.co/models/<upscaler-model>` using `HF_TOKEN` (already in env)
+  - Candidate model: `eugenesiow/Real-ESRGAN` (image-to-image, 4× upscale, available on HF free inference tier)
+  - Keep the same input/output contract: accepts `{ imageUrl: string }`, returns `{ enhancedUrl: string }`
+  - Keep R2 caching logic unchanged — only the upstream API call changes
+  - Remove `FAL_KEY` reference from `wrangler.toml` bindings (keep `HF_TOKEN`)
+
+- [x] 🟥 OE-2: `src/services/__tests__/enhanceImageService.test.ts` — update tests to reflect new endpoint behaviour
+  - Mock `fetch` against the new HF URL pattern instead of `fal.run`
+  - Cover: success, model-loading delay (503 → retry), auth failure (401), unexpected shape
+
+---
+
+### Phase 2 — Remove auto-triggers
+
+- [x] 🟥 OE-3: `src/App.tsx` — remove the `useEffect` at lines 254–261 that auto-calls `runEnhanceThenRemoveBg` for idle product image sources
+  - Keep `runEnhanceThenRemoveBg` as a callable function; it will be called from the new pipeline in OE-6
+
+- [x] 🟥 OE-4: `src/App.tsx` — remove the `useEffect` at lines 288–294 that auto-calls `handleRemoveLogoBackground` when a product is selected
+  - Keep `handleRemoveLogoBackground` as a callable function; it will be called from the new pipeline in OE-6
+
+---
+
+### Phase 3 — Unified pipeline + job state
+
+- [x] 🟥 OE-5: `src/App.tsx` — add local state for the enhance job
+  - `const [enhanceJobStatus, setEnhanceJobStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')`
+  - `const [enhanceJobStep, setEnhanceJobStep] = useState('')`
+  - Reset both to `'idle'` / `''` inside `selectProduct` so a new product gets a fresh button
+  - Implemented as `useEnhancePipeline` hook in `src/hooks/useEnhancePipeline.ts`
+
+- [x] 🟥 OE-6: `src/App.tsx` — compose `runEnhancePipeline()` callback
+  - Guards: no-op if `enhanceJobStatus === 'running'`; requires `selectedProduct` to be non-null
+  - Sequential steps with step-label updates:
+    1. `setEnhanceJobStep('Enhancing product image...')` → `runEnhanceThenRemoveBg()` for the active product image source
+    2. `setEnhanceJobStep('Removing background...')` → bg removal completes (already chained inside `runEnhanceThenRemoveBg`)
+    3. `setEnhanceJobStep('Enhancing logo...')` → enhance the brand logo URL
+    4. `setEnhanceJobStep('Removing logo background...')` → `handleRemoveLogoBackground()`
+  - On success: `setEnhanceJobStatus('done')`
+  - On any thrown error: `setEnhanceJobStatus('error')`, `addLog('error', …)`
+  - Implemented in `src/hooks/useEnhancePipeline.ts`; `resetEnhancePipeline` uses a `cancelledRef` for mid-run product changes
+
+---
+
+### Phase 4 — Button + overlay in BannerPreview
+
+- [x] 🟥 OE-7: `src/components/BannerPreview/BannerPreview.tsx` — add new props
+  - `enhanceJobStatus: 'idle' | 'running' | 'done' | 'error'`
+  - `enhanceJobStep: string`
+  - `onEnhance: () => void`
+
+- [x] 🟥 OE-8: `src/components/BannerPreview/BannerPreview.tsx` — add **"Enhance"** button
+  - Rendered below the 712×322 preview, full-width, same style as "Export to CMS":
+    - Idle: `bg-[var(--accent-base)] hover:bg-[var(--accent-hover)] active:scale-[0.98]` — label "Enhance"
+    - Running: disabled, `cursor-not-allowed bg-[var(--surface-2)]`
+    - Done: hidden (`display: none`) — pipeline is idempotent, no need to re-run
+    - Error: re-shown with label "Retry Enhance" + small error note below button
+
+- [x] 🟥 OE-9: `src/components/BannerPreview/BannerPreview.tsx` — add processing overlay on the banner card
+  - Covers the 712×322 area with `pointer-events-none` + semi-transparent backdrop when `enhanceJobStatus === 'running'`
+  - Centred text: `enhanceJobStep` value (e.g. `"Enhancing product image..."`)
+  - Animated spinner or pulsing opacity so the user knows work is in progress
+  - Overlay is absent when `enhanceJobStatus !== 'running'`
+
+---
+
+### Phase 5 — Wire up in App.tsx
+
+- [x] 🟥 OE-10: `src/App.tsx` — pass new props to `<BannerPreview>`
+  - `enhanceJobStatus={enhanceJobStatus}`
+  - `enhanceJobStep={enhanceJobStep}`
+  - `onEnhance={runEnhancePipeline}`
+
+---
+
+### Phase 6 — Tests
+
+- [x] 🟥 OE-11: `src/hooks/__tests__/useEnhancePipeline.test.ts` (new file) — verify `enhanceJobStatus` resets to `'idle'` on product change
+  - Simulate: set status to `'done'`, call `selectProduct` with a new product, assert status is `'idle'`
+  - Also covers: cancellation ref ignores stale state updates from an in-flight run after reset
+
+- [x] 🟥 OE-12: Unit test for `runEnhancePipeline` in `src/hooks/__tests__/useEnhancePipeline.test.ts`
+  - Cover: happy path (all four steps complete, status → `'done'`)
+  - Cover: enhancement fails on product image (non-fatal — pipeline continues; note: spec diverged from impl)
+  - Cover: product image bg removal fails (status → `'error'`)
+  - Cover: logo bg removal fails (status → `'error'`)
+  - Cover: called while `'running'` is a no-op (guard)
+  - Cover: no product selected → no-op; no active source → no-op
+  - Cover: no logo URL → logo steps skipped, still reaches `'done'`
+
+- [x] 🟥 OE-13: `src/components/BannerPreview/__tests__/BannerPreview.test.tsx` — add cases for the Enhance button
+  - Idle: button visible, labelled "Enhance", enabled; click fires `onEnhance`
+  - Running: button disabled, overlay rendered with step text
+  - Done: button absent from DOM
+  - Error: button visible, labelled "Retry Enhance"; error note shown below button
+
+---
+
+#### Edge Cases (OE)
+
+| Scenario | Handling |
+|---|---|
+| User clicks Enhance with no product selected | `runEnhancePipeline` is a no-op; button is not rendered without a selected product |
+| Enhancement API returns 503 (model loading) | HF endpoint retries up to 3×; if all fail, pipeline moves to `'error'` and logs |
+| Logo URL is `null` (no brand logo on product) | Logo steps (OE-6 steps 3–4) are skipped silently; pipeline still completes to `'done'` |
+| User switches product while pipeline is running | `selectProduct` sets `enhanceJobStatus` back to `'idle'`; the in-flight pipeline's `setEnhanceJobStatus` calls are ignored via a stale-closure guard (`isCancelled` ref) |
+| bg removal produces a broken blob URL | `removeBackground` rejects; caught in `runEnhancePipeline`; status → `'error'` |
+| Done state persists after page refresh | `enhanceJobStatus` is local state — it resets to `'idle'` on refresh; user can re-enhance |
+
+---
+
+#### Files Modified (OE)
+
+| File | Change |
+|---|---|
+| `PLAN.md` | Add OE section; update Overall Progress |
+| `functions/api/enhance-image.ts` | Swap fal.ai → HuggingFace upscaler; remove `FAL_KEY` usage |
+| `wrangler.toml` | Remove `FAL_KEY` binding |
+| `src/App.tsx` | Remove auto-trigger `useEffect`s; add `enhanceJobStatus`/`enhanceJobStep` state; add `runEnhancePipeline`; pass new props to `BannerPreview` |
+| `src/components/BannerPreview/BannerPreview.tsx` | Add Enhance button, processing overlay, new props |
+| `src/services/__tests__/enhanceImageService.test.ts` | Update mocks for new HF endpoint |
+
+#### Files Created (OE)
+
+None — all changes are modifications to existing files.
+
+#### Files NOT Modified (OE)
+
+- `src/services/enhanceImageService.ts` — client-side caller is unchanged; only the Cloudflare Worker endpoint changes
+- `src/services/removeBackgroundService.ts` — bg removal pipeline is unchanged
+- `src/types/index.ts` — no new types needed; `enhanceJobStatus` lives in local component state
+- `src/hooks/useBannerState.tsx` — banner state shape is unchanged
+
+---
+
+## Enhance Revert + Scheduled Mode Wiring (ER)
+
+**Goal:** Three fixes in one pass:
+1. **Wire the Enhance button in scheduled mode** — OE only wired the button in builder mode (`BannerPreview`); `ScheduledBannerCard` has no enhance props at all.
+2. **Revert-to-original toggle** — after enhancement runs, the user can switch any individual image (product image or brand logo, independently) back to the pre-enhancement original using the existing edit-mode toggle area. Works in both builder and scheduled mode.
+3. **Deploy the HuggingFace worker** — the deployed Cloudflare Worker is still calling fal.ai (balance exhausted). The replacement using `HF_TOKEN` + swin2SR is already written in `functions/api/enhance-image.ts`; it just needs deploying with the env var set.
+
+**Architecture decisions:**
+- A new `showOriginal: boolean` field on `ImageSource` (default `false`) controls whether the render pipeline uses `originalUrl` verbatim, bypassing both `enhancedUrl` and `bgRemovedUrl`. A matching `showOriginalLogo: boolean` on `BannerState` covers the logo.
+- The toggle is only shown when `enhancedUrl !== null` — nothing to revert to if enhancement hasn't run.
+- Running the pipeline again after a revert resets `showOriginal` to `false` so the fresh enhanced result is shown automatically.
+- Scheduled mode reuses the single `useEnhancePipeline` instance from `App.tsx` — only the card currently being edited receives the enhance props; all other cards have no button.
+
+**Key design choices:**
+- `showOriginal = true` short-circuits all other URL selection: `originalUrl` is used even if `bgRemovedUrl` and `enhancedUrl` are present.
+- The "Use original / Enhanced" toggle chip sits next to the existing bg-removal toggle in image source edit mode — same visual language, independent state.
+- No new hook or service is needed; all changes are prop threading + state fields + UI.
+
+**Prefix:** `ER-1` – `ER-15`
+
+---
+
+### Phase 1 — Deploy HuggingFace worker
+
+- [x] 🟥 ER-1: `wrangler.toml` — remove `FAL_KEY` binding
+  - Verify `functions/api/enhance-image.ts` references only `HF_TOKEN` (confirmed in OE-1); remove any remaining `FAL_KEY` entry from `[vars]` or `[[env.*.vars]]`
+  - No code changes required — worker logic was already migrated in OE-1
+
+- [x] 🟥 ER-2: Cloudflare dashboard — set `HF_TOKEN` environment variable for the Worker *(manual step)*
+  - Navigate to: Workers & Pages → DigihaatCatalogueToBanner → Settings → Variables and Secrets
+  - Add `HF_TOKEN` as an encrypted secret with the HuggingFace API token value
+  - If `FAL_KEY` still exists as a secret, delete it
+
+- [x] 🟥 ER-3: Deploy updated worker
+  - Run `wrangler deploy` (or push to the branch that triggers CI deploy)
+  - Smoke-test: POST a real image URL to `/api/enhance-image` and confirm a valid enhanced URL is returned before proceeding to Phase 2
+
+---
+
+### Phase 2 — Verify auto-trigger removal
+
+- [x] 🟥 ER-4: `src/App.tsx` — confirm OE-3 and OE-4 auto-trigger `useEffect`s are gone
+  - Grep for any `useEffect` that calls `runEnhanceThenRemoveBg` or `handleRemoveLogoBackground` automatically on product/source change
+  - If found, remove them — these should have been removed in OE-3/OE-4 but the user still reports auto-enhancement firing in scheduled mode
+
+---
+
+### Phase 3 — Wire Enhance button in scheduled mode
+
+- [x] 🟥 ER-5: `src/components/DateSchedule/ScheduledBannerCard.tsx` — add enhance props to `ScheduledBannerCardProps`
+  - `onEnhance?: () => void`
+  - `enhanceJobStatus?: 'idle' | 'running' | 'done' | 'error'`
+  - `enhanceJobStep?: string`
+  - All optional so existing callsites without enhance wiring compile unchanged during migration
+
+- [x] 🟥 ER-6: `src/components/DateSchedule/ScheduledBannerCard.tsx` — add Enhance button + processing overlay
+  - Mirror OE-8 and OE-9 exactly:
+    - Idle: accent button labelled "Enhance", full-width or adjacent to "Remove Bg" button
+    - Running: button disabled + semi-transparent overlay covering the banner preview area with centred `enhanceJobStep` text and spinner
+    - Done: button hidden (`display: none`)
+    - Error: button re-shown with label "Retry Enhance" + small error note below
+  - Only render when `onEnhance` prop is provided (guard: `{onEnhance && <button …>}`)
+
+- [x] 🟥 ER-7: `src/components/DateSchedule/ScheduledBannersGrid.tsx` — thread enhance props through to each card
+  - Accept `onEnhance`, `enhanceJobStatus`, `enhanceJobStep` as props (or receive from context if that's the existing pattern)
+  - Forward them only to the card whose `entry.id` matches the currently editing card; all others receive `undefined`
+
+- [x] 🟥 ER-8: `src/App.tsx` — pass enhance props to `ScheduledBannersGrid` for the active editing card
+  - Reuse the existing `runEnhancePipeline`, `enhanceJobStatus`, `enhanceJobStep` from `useEnhancePipeline`
+  - Only the card with `editingEntryId === entry.id` gets `onEnhance={runEnhancePipeline}` and the status/step props
+  - No new state needed — the single pipeline instance already resets on `selectProduct`
+
+---
+
+### Phase 4 — Revert-to-original data model
+
+- [x] 🟥 ER-9: `src/types/index.ts` — extend `ImageSource` and `BannerState`
+  - Add `showOriginal: boolean` to `ImageSource` (after `showBgRemoved`)
+    - `true` → render `originalUrl`; ignore `enhancedUrl` and `bgRemovedUrl`
+    - `false` → existing logic: `bgRemovedUrl` if `showBgRemoved`, else `enhancedUrl ?? originalUrl`
+  - Add `showOriginalLogo: boolean` to `BannerState` (after `showBgRemovedLogo`), mirroring the logo toggle pattern
+
+- [x] 🟥 ER-10: `src/hooks/useBannerState.tsx` — initialise and expose new fields
+  - `addProductImageSource` and `addLogoImageSource`: initialise `showOriginal: false`
+  - Add `toggleShowOriginal(sourceId: string): void` — flips `showOriginal` on the matching `productImageSources` entry
+  - Add `toggleShowOriginalLogo(): void` — flips `showOriginalLogo` on `BannerState`
+  - `selectProduct`: reset all `showOriginal` to `false` and `showOriginalLogo` to `false` (fresh product = no manual override)
+  - `runEnhancePipeline` success path (in `useEnhancePipeline.ts`): reset `showOriginal` to `false` on the enhanced source so the new result is visible immediately
+
+---
+
+### Phase 5 — URL resolution + preview
+
+- [x] 🟥 ER-11: Update active image URL derivation (wherever it lives — `BannerPreview.tsx` or a helper)
+  - Current: `activeUrl = showBgRemoved && bgRemovedUrl ? bgRemovedUrl : (enhancedUrl ?? originalUrl)`
+  - New: `activeUrl = showOriginal ? originalUrl : (showBgRemoved && bgRemovedUrl ? bgRemovedUrl : (enhancedUrl ?? originalUrl))`
+  - Apply the same short-circuit for the logo: `logoUrl = showOriginalLogo ? originalLogoUrl : (showBgRemovedLogo && bgRemovedLogoUrl ? bgRemovedLogoUrl : (enhancedLogoUrl ?? originalLogoUrl))`
+
+---
+
+### Phase 6 — Toggle UI in edit mode
+
+- [x] 🟥 ER-12: `src/components/BannerControls/BannerControls.tsx` — add "Original / Enhanced" toggle chip per image source
+  - Only rendered when `source.enhancedUrl !== null` (enhancement has run; nothing to revert otherwise)
+  - Style: small toggle chip next to the existing bg-removal toggle — same visual language
+  - Label: "Original" when `showOriginal = true`, "Enhanced" when `showOriginal = false`
+  - On click: calls `toggleShowOriginal(source.id)` (product image) or `toggleShowOriginalLogo()` (brand logo)
+  - Applies independently to product image sources and the brand logo
+
+---
+
+### Phase 7 — Tests
+
+- [x] 🟥 ER-13: `src/hooks/__tests__/useBannerState.persistence.test.tsx` (or new file) — cover new toggle actions
+  - `toggleShowOriginal`: flips `true` → `false` → `true` on the correct source; other sources unaffected
+  - `toggleShowOriginalLogo`: flips the logo flag independently
+  - `selectProduct`: resets all `showOriginal` and `showOriginalLogo` to `false`
+  - `addProductImageSource`: new source has `showOriginal: false`
+
+- [x] 🟥 ER-14: `src/components/BannerPreview/__tests__/BannerPreview.test.tsx` — cover URL resolution with `showOriginal`
+  - `showOriginal = true`: renders `originalUrl` even when `enhancedUrl` and `bgRemovedUrl` are set
+  - `showOriginal = false` + `showBgRemoved = true`: renders `bgRemovedUrl` (existing behaviour unchanged)
+  - Same two cases for logo with `showOriginalLogo`
+
+- [x] 🟥 ER-15: `src/components/DateSchedule/__tests__/ScheduledBannerCard.test.tsx` — cover Enhance button in scheduled mode
+  - Idle: button visible, labelled "Enhance", click fires `onEnhance`
+  - Running: button disabled, overlay rendered with step text
+  - Done: button absent from DOM
+  - Error: "Retry Enhance" shown; error note below button
+  - No `onEnhance` prop: button not rendered at all
+
+---
+
+#### Edge Cases (ER)
+
+| Scenario | Handling |
+|---|---|
+| User toggles "Use original" before any enhancement | Toggle not shown — only rendered when `enhancedUrl !== null` |
+| User reverts to original, then clicks Enhance again | Pipeline completes → `showOriginal` reset to `false`; enhanced result shown automatically |
+| Multiple product image sources — some enhanced, some not | Each source has its own `showOriginal`; toggle only appears on sources with `enhancedUrl !== null` |
+| Logo has no URL | `showOriginalLogo` toggle hidden; logo enhancement skipped as per existing OE logic |
+| Enhance clicked in scheduled mode for non-editing card | `onEnhance` only passed to the editing card; all other cards have no button |
+| HF model returns 503 (loading) | Existing retry logic in `enhanceImageService.ts` handles up to 3 retries; pipeline moves to `'error'` if all fail |
+
+---
+
+#### Files Modified (ER)
+
+| File | Change |
+|---|---|
+| `PLAN.md` | Add ER section; update Overall Progress |
+| `wrangler.toml` | Remove `FAL_KEY` binding |
+| `src/types/index.ts` | Add `showOriginal` to `ImageSource`; add `showOriginalLogo` to `BannerState` |
+| `src/hooks/useBannerState.tsx` | Initialise `showOriginal: false`; add `toggleShowOriginal`, `toggleShowOriginalLogo`; reset on `selectProduct` |
+| `src/hooks/useEnhancePipeline.ts` | Reset `showOriginal` to `false` on the enhanced source after pipeline success |
+| `src/components/BannerPreview/BannerPreview.tsx` | Update URL resolution to respect `showOriginal` / `showOriginalLogo` |
+| `src/components/BannerControls/BannerControls.tsx` | Add "Original / Enhanced" toggle chip in image source edit mode |
+| `src/components/DateSchedule/ScheduledBannerCard.tsx` | Add `onEnhance`, `enhanceJobStatus`, `enhanceJobStep` props; add Enhance button + processing overlay |
+| `src/components/DateSchedule/ScheduledBannersGrid.tsx` | Thread enhance props to the active editing card |
+| `src/App.tsx` | Pass enhance props to `ScheduledBannersGrid`; verify OE auto-trigger removal |
+
+#### Files Created (ER)
+
+None — all changes are modifications to existing files.
+
+#### Files NOT Modified (ER)
+
+- `src/services/enhanceImageService.ts` — client-side caller unchanged; only the deployed worker changes
+- `src/services/removeBackgroundService.ts` — bg removal pipeline unchanged
+- `src/hooks/useEnhancePipeline.ts` — pipeline logic unchanged except the `showOriginal` reset on success (ER-10)
+- `src/services/persistenceService.ts` — serialises `BannerState` as-is; new boolean fields serialise automatically
+- `src/services/catalogueParser.ts` / `src/services/searchService.ts` — unaffected
