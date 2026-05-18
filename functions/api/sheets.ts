@@ -4,9 +4,6 @@ const CORS_HEADERS = {
   'access-control-allow-headers': 'content-type',
 }
 
-// Duck-typed CF Cache API — caches.default isn't in standard browser TS lib
-type CFCacheStorage = { default: { match(req: Request): Promise<Response | undefined>; put(req: Request, resp: Response): Promise<void> } }
-
 function jsonError(status: number, error: string, detail?: string): Response {
   return new Response(JSON.stringify({ error, detail: detail ?? null }), {
     status,
@@ -34,8 +31,6 @@ export async function onRequestOptions(): Promise<Response> {
 
 export async function onRequestGet(context: {
   request: Request
-  env: Record<string, unknown>
-  waitUntil(promise: Promise<unknown>): void
 }): Promise<Response> {
   const reqUrl = new URL(context.request.url)
   const sheetId = reqUrl.searchParams.get('sheetId')
@@ -44,12 +39,6 @@ export async function onRequestGet(context: {
   if (!sheetId) {
     return jsonError(400, 'Missing required query param: sheetId')
   }
-
-  // CF Cache API — keyed on our own endpoint URL (sheetId + gid)
-  const cache = (caches as unknown as CFCacheStorage).default
-  const cacheKey = new Request(context.request.url)
-  const cachedResp = await cache.match(cacheKey)
-  if (cachedResp) return cachedResp
 
   // Build gviz URL
   const gvizUrl = new URL(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq`)
@@ -75,23 +64,19 @@ export async function onRequestGet(context: {
     return jsonError(502, 'Unexpected Google Sheets response format', String(err))
   }
 
-  // Validate parseable before caching
+  // Validate parseable before returning
   try {
     JSON.parse(jsonText)
   } catch {
     return jsonError(502, 'Failed to parse Google Sheets response as JSON')
   }
 
-  const response = new Response(jsonText, {
+  return new Response(jsonText, {
     status: 200,
     headers: {
       'content-type': 'application/json',
-      'cache-control': 'public, max-age=300',
+      'cache-control': 'no-store',
       ...CORS_HEADERS,
     },
   })
-
-  context.waitUntil(cache.put(cacheKey, response.clone()))
-
-  return response
 }
