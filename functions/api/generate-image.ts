@@ -1,5 +1,3 @@
-import { hashKey, getFromR2, storeInR2, r2PublicUrl, type Env } from '../lib/r2Storage'
-
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
@@ -11,6 +9,10 @@ const IMG2IMG_MODEL = '@cf/runwayml/stable-diffusion-v1-5-img2img'
 // Low strength preserves product shape/label/colour; only lighting + quality improves
 const DEFAULT_STRENGTH = 0.45
 const DEFAULT_GUIDANCE = 7.5
+
+interface Env {
+  AI: { run(model: string, input: Record<string, unknown>): Promise<{ image: string }> }
+}
 
 function jsonError(status: number, error: string, detail?: string): Response {
   return new Response(JSON.stringify({ error, detail: detail ?? null }), {
@@ -48,15 +50,6 @@ export async function onRequestPost(context: {
   if (!prompt) return jsonError(400, 'Missing required field: prompt')
   if (!imageUrl) return jsonError(400, 'Missing required field: imageUrl')
 
-  const cacheKey = await hashKey(`sd-img2img:${imageUrl}:${prompt}`)
-  const cached = await getFromR2(context.env, cacheKey)
-  if (cached) {
-    return new Response(JSON.stringify({ url: r2PublicUrl(cacheKey), cached: true }), {
-      status: 200,
-      headers: { 'content-type': 'application/json', ...CORS_HEADERS },
-    })
-  }
-
   let imageBase64: string
   try {
     imageBase64 = await fetchImageAsBase64(imageUrl)
@@ -75,7 +68,6 @@ export async function onRequestPost(context: {
   } catch (err) {
     const msg = String(err)
     // CF classifier rejected the full prompt — retry with a safe minimal prompt
-    // that contains no product-description text, only visual/photography directives.
     if (msg.includes('NSFW') || msg.includes('nsfw')) {
       const safePrompt =
         'Professional studio product photograph, white background, soft drop shadow beneath product, ' +
@@ -95,10 +87,9 @@ export async function onRequestPost(context: {
     }
   }
 
-  const imgBuffer = Uint8Array.from(atob(result.image), c => c.charCodeAt(0)).buffer
-  await storeInR2(context.env, cacheKey, imgBuffer, 'image/png')
+  const url = `data:image/png;base64,${result.image}`
 
-  return new Response(JSON.stringify({ url: r2PublicUrl(cacheKey), cached: false }), {
+  return new Response(JSON.stringify({ url, cached: false }), {
     status: 200,
     headers: { 'content-type': 'application/json', ...CORS_HEADERS },
   })

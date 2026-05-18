@@ -1,5 +1,3 @@
-import { Env, getFromR2, hashKey, r2PublicUrl, storeInR2 } from '../lib/r2Storage'
-
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
@@ -8,16 +6,13 @@ const CORS_HEADERS = {
 
 const HF_RMBG_ENDPOINT = 'https://router.huggingface.co/hf-inference/models/briaai/RMBG-2.0'
 
+interface Env {
+  HF_TOKEN: string
+}
+
 function jsonError(status: number, error: string, detail?: string): Response {
   return new Response(JSON.stringify({ error, detail: detail ?? null }), {
     status,
-    headers: { 'content-type': 'application/json', ...CORS_HEADERS },
-  })
-}
-
-function jsonOk(url: string, cached: boolean): Response {
-  return new Response(JSON.stringify({ url, cached }), {
-    status: 200,
     headers: { 'content-type': 'application/json', ...CORS_HEADERS },
   })
 }
@@ -59,14 +54,6 @@ export async function onRequestPost(context: {
     return jsonError(500, 'HF_TOKEN not configured in environment')
   }
 
-  const cacheInput = imageUrl ? `rmbg:${imageUrl}` : `rmbg-data:${imageData}`
-  const cacheKey = await hashKey(cacheInput)
-
-  const cached = await getFromR2(context.env, cacheKey)
-  if (cached) {
-    return jsonOk(r2PublicUrl(cacheKey), true)
-  }
-
   // Resolve image bytes
   let imageBytes: ArrayBuffer
   let sourceContentType: string
@@ -94,7 +81,6 @@ export async function onRequestPost(context: {
     }
   }
 
-  // Call HF RMBG-1.4
   let hfResp: Response
   try {
     hfResp = await fetch(HF_RMBG_ENDPOINT, {
@@ -125,7 +111,13 @@ export async function onRequestPost(context: {
   }
 
   const pngBuffer = await hfResp.arrayBuffer()
-  await storeInR2(context.env, cacheKey, pngBuffer, 'image/png')
+  const bytes = new Uint8Array(pngBuffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  const url = `data:image/png;base64,${btoa(binary)}`
 
-  return jsonOk(r2PublicUrl(cacheKey), false)
+  return new Response(JSON.stringify({ url, cached: false }), {
+    status: 200,
+    headers: { 'content-type': 'application/json', ...CORS_HEADERS },
+  })
 }

@@ -1,5 +1,3 @@
-import { Env, getFromR2, hashKey, r2PublicUrl, storeInR2 } from '../lib/r2Storage'
-
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
@@ -11,16 +9,13 @@ const CORS_HEADERS = {
 const HF_ESRGAN_ENDPOINT =
   'https://router.huggingface.co/fal-ai/models/caidas/swin2SR-realworld-sr-x4-64-bsrgan-psnr'
 
+interface Env {
+  HF_TOKEN: string
+}
+
 function jsonError(status: number, error: string, detail?: string): Response {
   return new Response(JSON.stringify({ error, detail: detail ?? null }), {
     status,
-    headers: { 'content-type': 'application/json', ...CORS_HEADERS },
-  })
-}
-
-function jsonOk(url: string, cached: boolean): Response {
-  return new Response(JSON.stringify({ url, cached }), {
-    status: 200,
     headers: { 'content-type': 'application/json', ...CORS_HEADERS },
   })
 }
@@ -62,17 +57,7 @@ export async function onRequestPost(context: {
     return jsonError(500, 'HF_TOKEN not configured in environment')
   }
 
-  // Use a stable cache key so re-runs of the same image hit R2 immediately.
-  // Prefix kept as 'esrgan:' for backward-compat with any existing cached entries.
-  const cacheInput = imageUrl ? `esrgan:${imageUrl}` : `esrgan-data:${imageData}`
-  const cacheKey = await hashKey(cacheInput)
-
-  const cached = await getFromR2(context.env, cacheKey)
-  if (cached) {
-    return jsonOk(r2PublicUrl(cacheKey), true)
-  }
-
-  // Resolve image to raw bytes (same pattern as remove-background.ts)
+  // Resolve image to raw bytes
   let imageBytes: ArrayBuffer
   let sourceContentType: string
   if (imageUrl) {
@@ -99,7 +84,6 @@ export async function onRequestPost(context: {
     }
   }
 
-  // POST raw image bytes to HuggingFace; response is the enhanced image bytes
   let hfResp: Response
   try {
     hfResp = await fetch(HF_ESRGAN_ENDPOINT, {
@@ -130,7 +114,13 @@ export async function onRequestPost(context: {
   }
 
   const enhancedBuffer = await hfResp.arrayBuffer()
-  await storeInR2(context.env, cacheKey, enhancedBuffer, 'image/png')
+  const bytes = new Uint8Array(enhancedBuffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  const url = `data:image/png;base64,${btoa(binary)}`
 
-  return jsonOk(r2PublicUrl(cacheKey), false)
+  return new Response(JSON.stringify({ url, cached: false }), {
+    status: 200,
+    headers: { 'content-type': 'application/json', ...CORS_HEADERS },
+  })
 }
